@@ -1,122 +1,41 @@
-import { Buffer } from 'node:buffer';
-import * as Echogarden from 'echogarden';
+import OpenAI from 'openai';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawn } from 'child_process';
-import type { SynthesisOptions } from 'echogarden';
 
-const defaultOptions: Partial<SynthesisOptions> = {
-  engine: 'vits',
-  language: 'ru',
-  outputAudioFormat: { codec: 'wav' },
-};
+const TTS_MODEL = process.env.OPENAI_TTS_MODEL ?? 'tts-1';
+const TTS_VOICE = (process.env.OPENAI_TTS_VOICE ?? 'nova') as 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
-/**
- * Конвертация RawAudio в WAV (минимальный заголовок + данные).
- */
-function rawAudioToWavBuffer(
-  raw: { sampleRate: number; channels: Float32Array[] }
-): Buffer {
-  const numChannels = raw.channels.length;
-  const numSamples = raw.channels[0].length;
-  const bytesPerSample = 2;
-  const dataSize = numSamples * numChannels * bytesPerSample;
-  const headerSize = 44;
-  const buffer = Buffer.alloc(headerSize + dataSize);
-  let offset = 0;
-
-  const write = (value: number, bytes: number) => {
-    buffer.writeUIntLE(value, offset, bytes);
-    offset += bytes;
-  };
-
-  buffer.write('RIFF', 0);
-  write(36 + dataSize, 4);
-  buffer.write('WAVE', 8);
-  buffer.write('fmt ', 12);
-  write(16, 4);
-  write(1, 2);
-  write(numChannels, 2);
-  write(raw.sampleRate, 4);
-  write(raw.sampleRate * numChannels * bytesPerSample, 4);
-  write(numChannels * bytesPerSample, 2);
-  write(16, 2);
-  buffer.write('data', 36);
-  write(dataSize, 4);
-
-  const out = new Int16Array(numSamples * numChannels);
-  for (let i = 0; i < numSamples; i++) {
-    for (let c = 0; c < numChannels; c++) {
-      const s = Math.max(-1, Math.min(1, raw.channels[c][i]));
-      out[i * numChannels + c] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-  }
-  Buffer.from(out.buffer).copy(buffer, headerSize);
-  return buffer;
-}
-
-/**
- * Локальный синтез речи (TTS) через echogarden и воспроизведение.
- * @param text текст для озвучки
- * @param options опции синтеза
- */
-export async function speak(
-  text: string,
-  options: Partial<SynthesisOptions> = {}
-): Promise<void> {
+export async function speak(text: string): Promise<void> {
   if (!text.trim()) return;
 
-  const opts = { ...defaultOptions, ...options };
-  let result: Awaited<ReturnType<typeof Echogarden.synthesize>>;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY не задан.');
+
+  const client = new OpenAI({ apiKey });
+  const response = await client.audio.speech.create({
+    model: TTS_MODEL,
+    voice: TTS_VOICE,
+    input: text,
+    response_format: 'mp3',
+  });
+
+  const buf = Buffer.from(await response.arrayBuffer());
+  const filePath = join(tmpdir(), `tts-${Date.now()}.mp3`);
+  writeFileSync(filePath, buf);
 
   try {
-    result = await Echogarden.synthesize(text, opts);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (
-      (opts.engine === 'vits' || opts.engine === 'kokoro') &&
-      (msg.includes('No matching voice') || msg.includes('voice'))
-    ) {
-      result = await Echogarden.synthesize(text, { ...opts, engine: 'espeak' });
-    } else {
-      throw err;
-    }
-  }
-
-  const audio = result.audio;
-  const wavBuffer =
-    audio && 'sampleRate' in audio && 'channels' in audio
-      ? rawAudioToWavBuffer(audio)
-      : Buffer.isBuffer(audio)
-        ? audio
-        : audio instanceof Uint8Array
-          ? Buffer.from(audio)
-          : null;
-
-  if (!wavBuffer || wavBuffer.length === 0) {
-    console.warn('TTS: нет аудио для воспроизведения');
-    return;
-  }
-
-  const wavPath = join(tmpdir(), `voice-assistant-tts-${Date.now()}.wav`);
-  writeFileSync(wavPath, wavBuffer);
-
-  try {
-    await playWav(wavPath);
+    await playAudio(filePath);
   } finally {
-    try {
-      unlinkSync(wavPath);
-    } catch {
-      // ignore
-    }
+    try { unlinkSync(filePath); } catch { /* ignore */ }
   }
 }
 
-function playWav(wavPath: string): Promise<void> {
+function playAudio(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const isMac = process.platform === 'darwin';
-    const child = spawn(isMac ? 'afplay' : 'aplay', [wavPath], {
+    const child = spawn(isMac ? 'afplay' : 'mpv', isMac ? [path] : ['--no-video', path], {
       stdio: 'ignore',
     });
     child.on('error', reject);
