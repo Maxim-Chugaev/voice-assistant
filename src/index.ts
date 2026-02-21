@@ -12,7 +12,6 @@ import { transcribe } from './stt.js';
 import { speak } from './tts.js';
 import { chat, type Message } from './chat.js';
 
-
 const WAKE_WORD = process.env.WAKE_WORD ?? 'альтрон';
 
 function ensureEnv(): void {
@@ -97,27 +96,6 @@ function startContinuousRec(): { stream: NodeJS.ReadableStream; stop: () => void
   return { stream: proc.stdout!, stop: () => proc.kill('SIGTERM') };
 }
 
-/** Известные галлюцинации Whisper на тишине/шуме — игнорируем такой «транскрипт». */
-const WHISPER_HALLUCINATION_MARKERS = [
-  'редактор субтитров',
-  'корректор',
-  'спасибо за просмотр',
-  'thanks for watching',
-  'subscribe',
-  'подпишись',
-  'тревожная музыка',
-  'спокойная музыка',
-  // Whisper иногда возвращает подсказку (prompt) как «транскрипт», когда аудио тихое/неразборчивое
-  'команды, вопросы, рецепты, погода',
-  'пользователь говорит на русском',
-];
-
-function isWhisperHallucination(transcript: string): boolean {
-  const t = transcript.toLowerCase().trim();
-  if (!t) return true;
-  return WHISPER_HALLUCINATION_MARKERS.some((m) => t.includes(m));
-}
-
 /** Проверка, что в транскрипте есть wake word (учитываем искажения вроде "Альтрованная"). */
 function transcriptHasWakeWord(transcript: string, wakeWord: string): boolean {
   const t = transcript.toLowerCase().trim();
@@ -162,10 +140,8 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
     try {
       pcmToWav(snap, wavPath);
       const text = await transcribe(wavPath);
-      if (isWhisperHallucination(text)) {
-        return null;
-      }
       const t = text.toLowerCase().trim();
+      if (!t) return null;
       if (exitPhrases.some((p) => t.includes(p))) return 'exit';
       if (transcriptHasWakeWord(text, WAKE_WORD)) return 'wake';
     } catch {
@@ -184,7 +160,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       let userText = await transcribe(wavPath);
       userText = (userText ?? '').trim();
       userText = stripWakeWordFromStart(userText, WAKE_WORD) || userText;
-      if (!userText || isWhisperHallucination(userText) || userText.length < 2) {
+      if (!userText || userText.length < 2) {
         console.log('Не удалось распознать.');
         return;
       }

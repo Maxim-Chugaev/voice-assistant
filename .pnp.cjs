@@ -29,14 +29,9 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["@types/node", "npm:22.19.11"],\
-          ["@types/readline-sync", "npm:1.4.8"],\
           ["dotenv", "npm:16.6.1"],\
           ["echogarden", "virtual:2afc77074507740b1c9aaddf86402ef497eb019caef02e356612e52166f84042160911f880dddd46baf91217977c88eb1142ed92d537976111fe4aac43526bd2#npm:2.10.1"],\
-          ["mic", "npm:2.1.2"],\
-          ["node-audiorecorder", "npm:3.0.0"],\
-          ["node-record-lpcm16", "npm:1.0.1"],\
           ["openai", "virtual:2afc77074507740b1c9aaddf86402ef497eb019caef02e356612e52166f84042160911f880dddd46baf91217977c88eb1142ed92d537976111fe4aac43526bd2#npm:4.104.0"],\
-          ["readline-sync", "npm:1.4.10"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["voice-assistant", "workspace:."]\
         ],\
@@ -1673,15 +1668,6 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
-    ["@types/readline-sync", [\
-      ["npm:1.4.8", {\
-        "packageLocation": "../../.yarn/berry/cache/@types-readline-sync-npm-1.4.8-65bcd32e43-10c0.zip/node_modules/@types/readline-sync/",\
-        "packageDependencies": [\
-          ["@types/readline-sync", "npm:1.4.8"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
     ["@types/webrtc", [\
       ["npm:0.0.37", {\
         "packageLocation": "../../.yarn/berry/cache/@types-webrtc-npm-0.0.37-7fa3694479-10c0.zip/node_modules/@types/webrtc/",\
@@ -1931,13 +1917,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["debug", [\
-      ["npm:2.6.9", {\
-        "packageLocation": "../../.yarn/berry/cache/debug-npm-2.6.9-7d4cb597dc-10c0.zip/node_modules/debug/",\
-        "packageDependencies": [\
-          ["debug", "npm:2.6.9"]\
-        ],\
-        "linkType": "SOFT"\
-      }],\
       ["npm:4.4.3", {\
         "packageLocation": "../../.yarn/berry/cache/debug-npm-4.4.3-0105c6123a-10c0.zip/node_modules/debug/",\
         "packageDependencies": [\
@@ -1951,20 +1930,6 @@ const RAW_RUNTIME_STATE =
           ["@types/supports-color", null],\
           ["debug", "virtual:27a95c269073dbdd4169a09f0c8f5e379b1ac1b07300e8a51e15eab9c87a24784c6fb87a66f9ef68f023cbbb1b0273be8de13d79e98ff26129a71ca366ad636d#npm:4.4.3"],\
           ["ms", "npm:2.1.3"],\
-          ["supports-color", null]\
-        ],\
-        "packagePeers": [\
-          "@types/supports-color",\
-          "supports-color"\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["virtual:e0ac58bce58f3bed9f5d0187eddf8d46b06ddbfd072d7f35e589b02bd438cc3d13b346062e4cc1b7816246753f6a8ab6ee1f143e5d4445e87a2ab0411a78d255#npm:2.6.9", {\
-        "packageLocation": "./.yarn/__virtual__/debug-virtual-a6a4e3767f/3/.yarn/berry/cache/debug-npm-2.6.9-7d4cb597dc-10c0.zip/node_modules/debug/",\
-        "packageDependencies": [\
-          ["@types/supports-color", null],\
-          ["debug", "virtual:e0ac58bce58f3bed9f5d0187eddf8d46b06ddbfd072d7f35e589b02bd438cc3d13b346062e4cc1b7816246753f6a8ab6ee1f143e5d4445e87a2ab0411a78d255#npm:2.6.9"],\
-          ["ms", "npm:2.0.0"],\
           ["supports-color", null]\
         ],\
         "packagePeers": [\
@@ -2969,15 +2934,6 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
-    ["mic", [\
-      ["npm:2.1.2", {\
-        "packageLocation": "../../.yarn/berry/cache/mic-npm-2.1.2-bac989838c-10c0.zip/node_modules/mic/",\
-        "packageDependencies": [\
-          ["mic", "npm:2.1.2"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
     ["microsoft-cognitiveservices-speech-sdk", [\
       ["npm:1.44.1", {\
         "packageLocation": "../../.yarn/berry/cache/microsoft-cognitiveservices-speech-sdk-npm-1.44.1-c6dd0cc81b-10c0.zip/node_modules/microsoft-cognitiveservices-speech-sdk/",\
@@ -3044,13 +3000,6 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["ms", [\
-      ["npm:2.0.0", {\
-        "packageLocation": "../../.yarn/berry/cache/ms-npm-2.0.0-9e1101a471-10c0.zip/node_modules/ms/",\
-        "packageDependencies": [\
-          ["ms", "npm:2.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:2.1.3", {\
         "packageLocation": "../../.yarn/berry/cache/ms-npm-2.1.3-81ff3cfac1-10c0.zip/node_modules/ms/",\
         "packageDependencies": [\
@@ -3068,15 +3017,6 @@ const RAW_RUNTIME_STATE =
           ["int64-buffer", "npm:0.1.10"],\
           ["isarray", "npm:1.0.0"],\
           ["msgpack-lite", "npm:0.1.26"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["node-audiorecorder", [\
-      ["npm:3.0.0", {\
-        "packageLocation": "../../.yarn/berry/cache/node-audiorecorder-npm-3.0.0-e598e3513a-10c0.zip/node_modules/node-audiorecorder/",\
-        "packageDependencies": [\
-          ["node-audiorecorder", "npm:3.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3109,16 +3049,6 @@ const RAW_RUNTIME_STATE =
         "packagePeers": [\
           "@types/encoding",\
           "encoding"\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["node-record-lpcm16", [\
-      ["npm:1.0.1", {\
-        "packageLocation": "../../.yarn/berry/cache/node-record-lpcm16-npm-1.0.1-e0ac58bce5-10c0.zip/node_modules/node-record-lpcm16/",\
-        "packageDependencies": [\
-          ["debug", "virtual:e0ac58bce58f3bed9f5d0187eddf8d46b06ddbfd072d7f35e589b02bd438cc3d13b346062e4cc1b7816246753f6a8ab6ee1f143e5d4445e87a2ab0411a78d255#npm:2.6.9"],\
-          ["node-record-lpcm16", "npm:1.0.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3377,15 +3307,6 @@ const RAW_RUNTIME_STATE =
           ["read-pkg", "npm:6.0.0"],\
           ["read-pkg-up", "npm:8.0.0"],\
           ["type-fest", "npm:1.4.0"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["readline-sync", [\
-      ["npm:1.4.10", {\
-        "packageLocation": "../../.yarn/berry/cache/readline-sync-npm-1.4.10-6809f52ca7-10c0.zip/node_modules/readline-sync/",\
-        "packageDependencies": [\
-          ["readline-sync", "npm:1.4.10"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3785,14 +3706,9 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["@types/node", "npm:22.19.11"],\
-          ["@types/readline-sync", "npm:1.4.8"],\
           ["dotenv", "npm:16.6.1"],\
           ["echogarden", "virtual:2afc77074507740b1c9aaddf86402ef497eb019caef02e356612e52166f84042160911f880dddd46baf91217977c88eb1142ed92d537976111fe4aac43526bd2#npm:2.10.1"],\
-          ["mic", "npm:2.1.2"],\
-          ["node-audiorecorder", "npm:3.0.0"],\
-          ["node-record-lpcm16", "npm:1.0.1"],\
           ["openai", "virtual:2afc77074507740b1c9aaddf86402ef497eb019caef02e356612e52166f84042160911f880dddd46baf91217977c88eb1142ed92d537976111fe4aac43526bd2#npm:4.104.0"],\
-          ["readline-sync", "npm:1.4.10"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["voice-assistant", "workspace:."]\
         ],\

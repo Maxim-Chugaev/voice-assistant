@@ -26,15 +26,10 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "echogarden": "^2.10.1",
-    "mic": "2.1.2",
-    "node-audiorecorder": "^3.0.0",
-    "node-record-lpcm16": "^1.0.1",
-    "openai": "^4.73.0",
-    "readline-sync": "^1.4.10"
+    "openai": "^4.73.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/readline-sync": "^1.4.8",
     "typescript": "^5.7.0"
   },
   "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"

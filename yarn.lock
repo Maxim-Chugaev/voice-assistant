@@ -1446,13 +1446,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/readline-sync@npm:^1.4.8":
-  version: 1.4.8
-  resolution: "@types/readline-sync@npm:1.4.8"
-  checksum: 10c0/08da90bbc4905f42eea2f7e03253f86b8060e93dbd427cc2ef5ebc0955248088c85e1638dd480ce28e2e576624979a81e12d1371d2c38e1796002ca8efbc719f
-  languageName: node
-  linkType: hard
-
 "@types/webrtc@npm:^0.0.37":
   version: 0.0.37
   resolution: "@types/webrtc@npm:0.0.37"
@@ -1672,15 +1665,6 @@ __metadata:
     supports-color:
       optional: true
   checksum: 10c0/d79136ec6c83ecbefd0f6a5593da6a9c91ec4d7ddc4b54c883d6e71ec9accb5f67a1a5e96d00a328196b5b5c86d365e98d8a3a70856aaf16b4e7b1985e67f5a6
-  languageName: node
-  linkType: hard
-
-"debug@npm:^2.6.8":
-  version: 2.6.9
-  resolution: "debug@npm:2.6.9"
-  dependencies:
-    ms: "npm:2.0.0"
-  checksum: 10c0/121908fb839f7801180b69a7e218a40b5a0b718813b886b7d6bdb82001b931c938e2941d1e4450f33a1b1df1da653f5f7a0440c197f29fbf8a6e9d45ff6ef589
   languageName: node
   linkType: hard
 
@@ -2545,13 +2529,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mic@npm:2.1.2":
-  version: 2.1.2
-  resolution: "mic@npm:2.1.2"
-  checksum: 10c0/ea51f645337fbe9373c4102bd6d2115d72f705f3c66238bba7c51eca7b3ecda4c53d5490c1cd84e2838ae76d1942e708e098a70bd8c098d413b4f6f8153bcb43
-  languageName: node
-  linkType: hard
-
 "microsoft-cognitiveservices-speech-sdk@npm:~1.44.0":
   version: 1.44.1
   resolution: "microsoft-cognitiveservices-speech-sdk@npm:1.44.1"
@@ -2609,13 +2586,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ms@npm:2.0.0":
-  version: 2.0.0
-  resolution: "ms@npm:2.0.0"
-  checksum: 10c0/f8fda810b39fd7255bbdc451c46286e549794fcc700dc9cd1d25658bbc4dc2563a5de6fe7c60f798a16a60c6ceb53f033cb353f493f0cf63e5199b702943159d
-  languageName: node
-  linkType: hard
-
 "ms@npm:^2.0.0, ms@npm:^2.1.3":
   version: 2.1.3
   resolution: "ms@npm:2.1.3"
@@ -2637,13 +2607,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-audiorecorder@npm:^3.0.0":
-  version: 3.0.0
-  resolution: "node-audiorecorder@npm:3.0.0"
-  checksum: 10c0/26da48b9baa0ed3530bee905d87baab8ac8a5a137487974bffa4c4baedb6ec3b6e433e2e8078ff83db8ace9dc3e3b6aad4b5e7d8a8297dacaecde04fc8f5dfa4
-  languageName: node
-  linkType: hard
-
 "node-domexception@npm:1.0.0":
   version: 1.0.0
   resolution: "node-domexception@npm:1.0.0"
@@ -2662,15 +2625,6 @@ __metadata:
     encoding:
       optional: true
   checksum: 10c0/b55786b6028208e6fbe594ccccc213cab67a72899c9234eb59dba51062a299ea853210fcf526998eaa2867b0963ad72338824450905679ff0fa304b8c5093ae8
-  languageName: node
-  linkType: hard
-
-"node-record-lpcm16@npm:^1.0.1":
-  version: 1.0.1
-  resolution: "node-record-lpcm16@npm:1.0.1"
-  dependencies:
-    debug: "npm:^2.6.8"
-  checksum: 10c0/f2c565482582d2c2735ec0fe62ac21c7614058ae7aad58da64dad6b40fb4037f7e26a60ad7f59f43bc7826d932c4a0a5fa7bda2aff52639f855b1952ea22ecd2
   languageName: node
   linkType: hard
 
@@ -2892,13 +2846,6 @@ __metadata:
     parse-json: "npm:^5.2.0"
     type-fest: "npm:^1.0.1"
   checksum: 10c0/b51ee5eed75324f4fac34c9a40b5e4b403de4c532242be01959c9bbdb1ff9db1c6c2aefaba569622fec49d1ead866e97ba856ab145f6e11039b11f7bec1318ba
-  languageName: node
-  linkType: hard
-
-"readline-sync@npm:^1.4.10":
-  version: 1.4.10
-  resolution: "readline-sync@npm:1.4.10"
-  checksum: 10c0/0a4d0fe4ad501f8f005a3c9cbf3cc0ae6ca2ced93e9a1c7c46f226bdfcb6ef5d3f437ae7e9d2e1098ee13524a3739c830e4c8dbc7f543a693eecd293e41093a3
   languageName: node
   linkType: hard
 
@@ -3262,14 +3209,9 @@ __metadata:
   resolution: "voice-assistant@workspace:."
   dependencies:
     "@types/node": "npm:^22.10.0"
-    "@types/readline-sync": "npm:^1.4.8"
     dotenv: "npm:^16.4.5"
     echogarden: "npm:^2.10.1"
-    mic: "npm:2.1.2"
-    node-audiorecorder: "npm:^3.0.0"
-    node-record-lpcm16: "npm:^1.0.1"
     openai: "npm:^4.73.0"
-    readline-sync: "npm:^1.4.10"
     typescript: "npm:^5.7.0"
   languageName: unknown
   linkType: soft
