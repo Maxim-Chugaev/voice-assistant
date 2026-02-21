@@ -1,11 +1,11 @@
 # Голосовой помощник
 
-Голосовой помощник на **Node.js/TypeScript** с API ChatGPT и **локальными** STT (распознавание речи) и TTS (синтез речи) без облачных сервисов для голоса.
+Голосовой помощник на **Node.js/TypeScript** с API ChatGPT, распознаванием речи через **OpenAI Whisper API** и **локальным** TTS (echogarden).
 
 ## Возможности
 
-- **Локальный STT** — распознавание речи через [echogarden](https://github.com/echogarden-project/echogarden) (движок Whisper, работает офлайн).
-- **Локальный TTS** — синтез речи через echogarden (движок Kokoro).
+- **STT** — распознавание речи через OpenAI Whisper API (тот же ключ, что для ChatGPT).
+- **Локальный TTS** — синтез речи через echogarden (VITS).
 - **ChatGPT** — ответы генерирует OpenAI API (нужен ключ).
 - Режимы: запись с микрофона, ввод текста или **wake word** — запись начинается после произнесения ключевого слова (по умолчанию «альтрон»).
 
@@ -15,7 +15,7 @@
 - **SoX** — для записи с микрофона:
   - macOS: `brew install sox`
   - Linux: `sudo apt install sox libsox-fmt-all`
-- **OpenAI API key** — для ChatGPT.
+- **OpenAI API key** — для ChatGPT и Whisper API.
 
 ## Установка
 
@@ -52,28 +52,29 @@ yarn assist
 
 | Переменная       | Описание                          |
 |------------------|-----------------------------------|
-| `OPENAI_API_KEY` | Ключ API OpenAI (обязательно)     |
+| `OPENAI_API_KEY` | Ключ API OpenAI (обязательно, для ChatGPT и Whisper API) |
 | `OPENAI_MODEL`   | Модель (по умолчанию: gpt-4o-mini)|
 | `WAKE_WORD`      | Wake word для режима 3 (по умолчанию: альтрон)|
-| `VOSK_MODEL_PATH`| Путь к модели Vosk для детекции wake word (опционально). Если задан, в режиме 3 чанки проверяются через Vosk. |
+| `OPENAI_WHISPER_PROMPT` | Подсказка для Whisper: контекст и частые слова (до ~224 токенов). Улучшает распознавание. |
+| `OPENAI_WHISPER_MODEL` | Модель OpenAI для речи: `whisper-1` (по умолчанию) или `gpt-4o-transcribe`. |
 
-### Vosk для wake word (режим 3)
+Распознавание речи везде идёт через **OpenAI Whisper API** (тот же ключ). Тарифы: [OpenAI — Whisper](https://openai.com/api/pricing/).
 
-Чтобы использовать **Vosk** вместо Whisper для распознавания wake word в режиме 3:
+### Как улучшить распознавание
 
-1. Скачайте русскую модель с [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) (например `vosk-model-small-ru-0.22`, ~45 МБ).
-2. Распакуйте архив в папку.
-3. В `.env` укажите полный путь к этой папке:
-   ```
-   VOSK_MODEL_PATH=/Users/you/models/vosk-model-small-ru-0.22
-   ```
-
-После этого при выборе режима 3 в консоли появится «Детекция wake word: Vosk» — короткие чанки будут распознаваться через Vosk (часто быстрее и стабильнее для одного слова «альтрон»). Полная фраза по-прежнему распознаётся через Whisper.
+- **Тихое место** — фоновый шум сильно портит результат.
+- **Чёткая речь** — говорить разборчиво, не слишком быстро.
+- **Подсказка (prompt)** — в `.env` задайте `OPENAI_WHISPER_PROMPT` с контекстом и словами, которые часто говорите, например:  
+  `OPENAI_WHISPER_PROMPT=Голосовой помощник. Русская речь: альтрон, рецепт, блины, расскажи, погода, время.`  
+  Это помогает с редкими словами и именами.
+- **Микрофон** — встроенный в ноутбук часто хуже внешнего; проверьте уровень в настройках системы.
+- **Модель** — если в аккаунте доступна `gpt-4o-transcribe`, попробуйте в `.env`:  
+  `OPENAI_WHISPER_MODEL=gpt-4o-transcribe`
 
 ## Структура проекта
 
 - `src/index.ts` — главный цикл, запись, меню.
-- `src/stt.ts` — распознавание речи (echogarden).
+- `src/stt.ts` — распознавание речи (OpenAI Whisper API).
 - `src/tts.ts` — синтез речи и воспроизведение (echogarden + afplay/aplay).
 - `src/chat.ts` — запросы к ChatGPT (OpenAI API).
 

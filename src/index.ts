@@ -105,6 +105,24 @@ function concatenateWavs(paths: string[], outPath: string): Promise<void> {
   });
 }
 
+/** Известные галлюцинации Whisper на тишине/шуме — игнорируем такой «транскрипт». */
+const WHISPER_HALLUCINATION_MARKERS = [
+  'редактор субтитров',
+  'корректор',
+  'спасибо за просмотр',
+  'thanks for watching',
+  'subscribe',
+  'подпишись',
+  'тревожная музыка',
+  'спокойная музыка',
+];
+
+function isWhisperHallucination(transcript: string): boolean {
+  const t = transcript.toLowerCase().trim();
+  if (!t) return true;
+  return WHISPER_HALLUCINATION_MARKERS.some((m) => t.includes(m));
+}
+
 /** Проверка, что в транскрипте есть wake word (учитываем искажения вроде "Альтрованная"). */
 function transcriptHasWakeWord(transcript: string, wakeWord: string): boolean {
   const t = transcript.toLowerCase().trim();
@@ -122,16 +140,7 @@ function stripWakeWordFromStart(text: string, wakeWord: string): string {
 
 async function runWakeWordMode(history: Message[]): Promise<void> {
   const chunkDuration = 3;
-  const wakeWordLower = WAKE_WORD.toLowerCase();
   const exitPhrases = ['стоп', 'выход', 'хватит'];
-
-  const voskModelPath = process.env.VOSK_MODEL_PATH;
-  const wakeWordEngineOptions = voskModelPath
-    ? { engine: 'vosk' as const, language: 'ru' as const, vosk: { modelPath: voskModelPath } }
-    : {};
-  if (voskModelPath) {
-    console.log('Детекция wake word: Vosk');
-  }
 
   console.log(`Слушаю wake word «${WAKE_WORD}». Скажите «стоп» для выхода.`);
   console.log('');
@@ -140,8 +149,13 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
     const chunkPath = await recordChunk(chunkDuration);
     let transcript: string;
     try {
-      transcript = await transcribe(chunkPath, wakeWordEngineOptions);
-    } catch {
+      transcript = await transcribe(chunkPath);
+    } catch (err) {
+      try { unlinkSync(chunkPath); } catch { /* ignore */ }
+      continue;
+    }
+
+    if (isWhisperHallucination(transcript)) {
       try { unlinkSync(chunkPath); } catch { /* ignore */ }
       continue;
     }
@@ -179,7 +193,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
     userText = userText.trim();
     userText = stripWakeWordFromStart(userText, WAKE_WORD) || userText;
 
-    if (!userText) {
+    if (!userText || isWhisperHallucination(userText) || userText.length < 2) {
       console.log('Не удалось распознать запрос.');
       continue;
     }
