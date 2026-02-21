@@ -88,6 +88,19 @@ function pcmToWav(pcm: Buffer, outPath: string): void {
   writeFileSync(outPath, Buffer.concat([h, pcm]));
 }
 
+/** RMS энергия PCM-буфера (16-bit LE mono). Тишина ~0–200, речь ~500–5000+. */
+function pcmRms(pcm: Buffer): number {
+  let sum = 0;
+  const samples = pcm.length >> 1;
+  for (let i = 0; i < pcm.length; i += 2) {
+    const s = pcm.readInt16LE(i);
+    sum += s * s;
+  }
+  return Math.sqrt(sum / (samples || 1));
+}
+
+const VAD_THRESHOLD = Math.max(50, Number(process.env.VAD_THRESHOLD) || 300);
+
 /** Непрерывный захват: rec -t raw в stdout. */
 function startContinuousRec(): { stream: NodeJS.ReadableStream; stop: () => void } {
   const proc = spawn('rec', [
@@ -133,6 +146,11 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
     checkBusy = true;
     const snap = ring.getLast(CHECK_SEC);
     if (snap.length < PCM_BYTES_PER_SEC) {
+      checkBusy = false;
+      return null;
+    }
+    const energy = pcmRms(snap);
+    if (energy < VAD_THRESHOLD) {
       checkBusy = false;
       return null;
     }
@@ -193,7 +211,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       }
       if (r === 'wake') {
         collectingPhrase = true;
-        phraseChunks = [ring.getLast(2)];
+        phraseChunks = [ring.getLast(RING_SEC)];
         phraseEndAt = Date.now() + PHRASE_SEC * 1000;
         console.log('Wake word! Говорите…');
       }
