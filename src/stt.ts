@@ -21,5 +21,17 @@ export async function transcribe(inputPath: string): Promise<string> {
     response_format: 'text',
     ...(prompt ? { prompt: prompt.slice(0, 500) } : {}),
   });
-  return (typeof transcription === 'string' ? transcription : String((transcription as { text?: string }).text ?? '')).trim();
+  const result = (typeof transcription === 'string' ? transcription : String((transcription as { text?: string }).text ?? '')).trim();
+  if (isPromptEcho(result, prompt)) return '';
+  return result;
+}
+
+/** Whisper на тишине/шуме возвращает промпт как «транскрипт» — отсекаем. */
+function isPromptEcho(text: string, prompt: string): boolean {
+  if (!text) return true;
+  const t = text.toLowerCase().replace(/[.,!?;:\s]+/g, ' ').trim();
+  const p = prompt.toLowerCase().replace(/[.,!?;:\s]+/g, ' ').trim();
+  if (t.includes(p)) return true;
+  if (p.includes(t) && t.length > p.length * 0.4) return true;
+  return false;
 }
