@@ -4,6 +4,7 @@ import type { RecognitionOptions } from 'echogarden';
 const defaultOptions: Partial<RecognitionOptions> = {
   language: 'ru',
   engine: 'whisper',
+  whisper: { model: 'base' },
 };
 
 /**

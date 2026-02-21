@@ -24,6 +24,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@echogarden/vosk": "~0.3.39-patched.1",
     "dotenv": "^16.4.5",
     "echogarden": "^2.10.1",
     "node-audiorecorder": "^3.0.0",
