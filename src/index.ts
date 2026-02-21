@@ -1,7 +1,12 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: join(__dirname, '..', '.env') });
+
 import { createRequire } from 'module';
 import { createWriteStream } from 'fs';
-import { join } from 'path';
 import { tmpdir } from 'os';
 import readlineSync from 'readline-sync';
 import { transcribe } from './stt.js';
@@ -37,7 +42,14 @@ function recordToFile(durationHint: string): Promise<string> {
       console
     );
 
+    recorder.start();
+
     const stream = recorder.stream();
+    if (!stream) {
+      fileStream.close();
+      return reject(new Error('Не удалось получить аудиопоток от рекордера'));
+    }
+
     stream.pipe(fileStream);
     stream.on('error', (err: Error) => {
       fileStream.close();
@@ -49,7 +61,6 @@ function recordToFile(durationHint: string): Promise<string> {
       resolve(wavPath);
     });
 
-    recorder.start();
     console.log(durationHint);
     readlineSync.question('Нажмите Enter чтобы остановить запись… ');
     recorder.stop();

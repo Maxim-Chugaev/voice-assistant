@@ -6,8 +6,9 @@ import { spawn } from 'child_process';
 import type { SynthesisOptions } from 'echogarden';
 
 const defaultOptions: Partial<SynthesisOptions> = {
-  engine: 'kokoro',
+  engine: 'vits',
   language: 'ru',
+  outputAudioFormat: { codec: 'wav' },
 };
 
 /**
@@ -65,18 +66,32 @@ export async function speak(
 ): Promise<void> {
   if (!text.trim()) return;
 
-  const result = await Echogarden.synthesize(text, {
-    ...defaultOptions,
-    ...options,
-  });
+  const opts = { ...defaultOptions, ...options };
+  let result: Awaited<ReturnType<typeof Echogarden.synthesize>>;
+
+  try {
+    result = await Echogarden.synthesize(text, opts);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      (opts.engine === 'vits' || opts.engine === 'kokoro') &&
+      (msg.includes('No matching voice') || msg.includes('voice'))
+    ) {
+      result = await Echogarden.synthesize(text, { ...opts, engine: 'espeak' });
+    } else {
+      throw err;
+    }
+  }
 
   const audio = result.audio;
   const wavBuffer =
     audio && 'sampleRate' in audio && 'channels' in audio
       ? rawAudioToWavBuffer(audio)
-      : Buffer.isBuffer(audio) || audio instanceof Uint8Array
-        ? Buffer.from(audio as ArrayBuffer)
-        : null;
+      : Buffer.isBuffer(audio)
+        ? audio
+        : audio instanceof Uint8Array
+          ? Buffer.from(audio)
+          : null;
 
   if (!wavBuffer || wavBuffer.length === 0) {
     console.warn('TTS: нет аудио для воспроизведения');

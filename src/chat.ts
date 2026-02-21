@@ -1,8 +1,17 @@
 import OpenAI from 'openai';
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let client: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (!client) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY не задан. Добавьте в .env или окружение.');
+    }
+    client = new OpenAI({ apiKey });
+  }
+  return client;
+}
 
 const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 
@@ -14,7 +23,7 @@ const systemPrompt = `Ты голосовой помощник. Отвечай �
  * Отправка сообщения в ChatGPT и получение ответа.
  */
 export async function chat(messages: Message[]): Promise<string> {
-  const response = await client.chat.completions.create({
+  const response = await getClient().chat.completions.create({
     model,
     messages: [{ role: 'system', content: systemPrompt }, ...messages],
     max_tokens: 500,
