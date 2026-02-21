@@ -115,6 +115,9 @@ const WHISPER_HALLUCINATION_MARKERS = [
   'подпишись',
   'тревожная музыка',
   'спокойная музыка',
+  // Whisper иногда возвращает подсказку (prompt) как «транскрипт», когда аудио тихое/неразборчивое
+  'команды, вопросы, рецепты, погода',
+  'пользователь говорит на русском',
 ];
 
 function isWhisperHallucination(transcript: string): boolean {
@@ -139,7 +142,7 @@ function stripWakeWordFromStart(text: string, wakeWord: string): string {
 }
 
 async function runWakeWordMode(history: Message[]): Promise<void> {
-  const chunkDuration = 3;
+  const chunkDuration = Math.max(3, Math.min(15, Number(process.env.WAKE_WORD_CHUNK_SECONDS) || 6));
   const exitPhrases = ['стоп', 'выход', 'хватит'];
 
   console.log(`Слушаю wake word «${WAKE_WORD}». Скажите «стоп» для выхода.`);

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import * as Echogarden from 'echogarden';
 import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';

@@ -55,10 +55,13 @@ yarn assist
 | `OPENAI_API_KEY` | Ключ API OpenAI (обязательно, для ChatGPT и Whisper API) |
 | `OPENAI_MODEL`   | Модель (по умолчанию: gpt-4o-mini)|
 | `WAKE_WORD`      | Wake word для режима 3 (по умолчанию: альтрон)|
+| `WAKE_WORD_CHUNK_SECONDS` | Длина чанка в режиме 3 в секундах (3–15, по умолчанию 6). Чем больше — тем меньше запросов к Whisper и расход, но дольше ждать срабатывания. |
 | `OPENAI_WHISPER_PROMPT` | Подсказка для Whisper: контекст и частые слова (до ~224 токенов). Улучшает распознавание. |
 | `OPENAI_WHISPER_MODEL` | Модель OpenAI для речи: `whisper-1` (по умолчанию) или `gpt-4o-transcribe`. |
 
-Распознавание речи везде идёт через **OpenAI Whisper API** (тот же ключ). Тарифы: [OpenAI — Whisper](https://openai.com/api/pricing/).
+Распознавание речи везде идёт через **OpenAI Whisper API** (тот же ключ). Ориентир: **$0.006 за минуту аудио** (округление по секундам). Один чанк 6 сек ≈ $0.0006. Тарифы: [OpenAI — Whisper](https://openai.com/api/pricing/).
+
+**Режим 3 (wake word):** пока вы молчите или ждёте, каждые `WAKE_WORD_CHUNK_SECONDS` секунд отправляется один запрос к Whisper (проверка чанка на слово «альтрон»). Чтобы меньше тратить — поставьте 8–10 сек в `.env`: `WAKE_WORD_CHUNK_SECONDS=8`.
 
 ### Как улучшить распознавание
 
