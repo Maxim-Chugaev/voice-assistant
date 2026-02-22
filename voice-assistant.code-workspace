@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../Downloads/vosk-model-small-ru-0.22"
+		}
+	],
+	"settings": {}
+}

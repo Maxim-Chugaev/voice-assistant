@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 
 const TTS_MODEL = process.env.OPENAI_TTS_MODEL ?? 'tts-1';
 const TTS_VOICE = (process.env.OPENAI_TTS_VOICE ?? 'nova') as 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+const TTS_VOLUME = parseInt(process.env.TTS_VOLUME ?? '200', 10);
 
 export async function speak(text: string): Promise<void> {
   if (!text.trim()) return;
@@ -35,7 +36,7 @@ export async function speak(text: string): Promise<void> {
 function playAudio(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const isMac = process.platform === 'darwin';
-    const child = spawn(isMac ? 'afplay' : 'mpv', isMac ? [path] : ['--no-video', path], {
+    const child = spawn(isMac ? 'afplay' : 'mpv', isMac ? [path] : ['--no-video', `--volume=${TTS_VOLUME}`, path], {
       stdio: 'ignore',
     });
     child.on('error', reject);

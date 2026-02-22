@@ -12,12 +12,22 @@ import { transcribe } from './stt.js';
 import { speak } from './tts.js';
 import { chat, type Message } from './chat.js';
 
+function ts(): string {
+  return new Date().toLocaleTimeString('ru-RU', { hour12: false });
+}
+function log(...args: unknown[]): void {
+  console.log(`[${ts()}]`, ...args);
+}
+function logErr(...args: unknown[]): void {
+  console.error(`[${ts()}]`, ...args);
+}
+
 const WAKE_WORD = process.env.WAKE_WORD ?? 'альтрон';
 
 function ensureEnv(): void {
   if (!process.env.OPENAI_API_KEY) {
-    console.error('Задайте OPENAI_API_KEY в .env или в окружении.');
-    console.error('Скопируйте .env.example в .env и укажите ключ.');
+    logErr('Задайте OPENAI_API_KEY в .env или в окружении.');
+    logErr('Скопируйте .env.example в .env и укажите ключ.');
     process.exit(1);
   }
 }
@@ -179,20 +189,20 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       userText = (userText ?? '').trim();
       userText = stripWakeWordFromStart(userText, WAKE_WORD) || userText;
       if (!userText || userText.length < 2) {
-        console.log('Не удалось распознать.');
+        log('Не удалось распознать.');
         return;
       }
-      console.log('Вы:', userText);
+      log('Вы:', userText);
       history.push({ role: 'user', content: userText });
       try {
-        console.log('Думаю…');
+        log('Думаю…');
         const reply = await chat(history);
         history.push({ role: 'assistant', content: reply });
-        console.log('Ответ:', reply);
-        console.log('Озвучиваю…');
+        log('Ответ:', reply);
+        log('Озвучиваю…');
         await speak(reply);
       } catch (err) {
-        console.error('Ошибка:', err);
+        logErr('Ошибка:', err);
         history.pop();
       }
     } finally {
@@ -206,14 +216,14 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       if (r === 'exit') {
         if (checkTimer) clearTimeout(checkTimer);
         stop();
-        console.log('Выход.');
+        log('Выход.');
         return;
       }
       if (r === 'wake') {
         collectingPhrase = true;
         phraseChunks = [ring.getLast(RING_SEC)];
         phraseEndAt = Date.now() + PHRASE_SEC * 1000;
-        console.log('Wake word! Говорите…');
+        log('Wake word! Говорите…');
       }
       schedule();
     }, delay);
@@ -228,20 +238,20 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
         const full = Buffer.concat(phraseChunks);
         phraseChunks = [];
         processPhrase(full).then(() => {
-          console.log('');
-          console.log(`Слушаю «${WAKE_WORD}»…`);
+          log('');
+          log(`Слушаю «${WAKE_WORD}»…`);
         }).catch(() => {
-          console.log('');
-          console.log(`Слушаю «${WAKE_WORD}»…`);
+          log('');
+          log(`Слушаю «${WAKE_WORD}»…`);
         });
       }
     }
   });
 
-  stream.on('error', (e: Error) => console.error('Микрофон:', e));
+  stream.on('error', (e: Error) => logErr('Микрофон:', e));
 
-  console.log(`Слушаю «${WAKE_WORD}» (непрерывно). «Стоп» — выход.`);
-  console.log('');
+  log(`Слушаю «${WAKE_WORD}» (непрерывно). «Стоп» — выход.`);
+  log('');
 
   schedule(FIRST_CHECK_MS);
 
@@ -254,12 +264,12 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
 
 async function main(): Promise<void> {
   ensureEnv();
-  console.log('Голосовой помощник');
-  console.log('Скажите «' + WAKE_WORD + '» и команду. «Стоп» — выход.');
-  console.log('');
+  log('Голосовой помощник');
+  log('Скажите «' + WAKE_WORD + '» и команду. «Стоп» — выход.');
+  log('');
 
   await runWakeWordMode([]);
-  console.log('До свидания.');
+  log('До свидания.');
 }
 
 main();
