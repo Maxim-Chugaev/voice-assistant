@@ -130,7 +130,7 @@ function transcriptHasWakeWord(transcript: string, wakeWord: string): boolean {
 function stripWakeWordFromStart(text: string, wakeWord: string): string {
   const w = wakeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const stem = w.slice(0, Math.min(5, w.length));
-  const regex = new RegExp(`^(${w}|${stem}\\S*)\\s*`, 'i');
+  const regex = new RegExp(`^(${w}|${stem}\\S*)[\\s,.:;!?-]*`, 'i');
   return text.replace(regex, '').trim();
 }
 
