@@ -19,11 +19,11 @@ export async function speak(text: string): Promise<void> {
     model: TTS_MODEL,
     voice: TTS_VOICE,
     input: text,
-    response_format: 'mp3',
+    response_format: 'opus',
   });
 
   const buf = Buffer.from(await response.arrayBuffer());
-  const filePath = join(tmpdir(), `tts-${Date.now()}.mp3`);
+  const filePath = join(tmpdir(), `tts-${Date.now()}.opus`);
   writeFileSync(filePath, buf);
 
   try {
