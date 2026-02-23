@@ -35,3 +35,22 @@ export async function chat(messages: Message[]): Promise<string> {
   }
   return content.trim();
 }
+
+/**
+ * Отправка сообщения в ChatGPT с получением потокового ответа.
+ */
+export async function* chatStream(messages: Message[]): AsyncGenerator<string, void, unknown> {
+  const stream = await getClient().chat.completions.create({
+    model,
+    messages: [{ role: 'system', content: systemPrompt }, ...messages],
+    max_tokens: 500,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) {
+      yield content;
+    }
+  }
+}

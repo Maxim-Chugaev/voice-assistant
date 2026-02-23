@@ -9,8 +9,8 @@ import { unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { transcribe } from './stt.js';
-import { speak } from './tts.js';
-import { chat, type Message } from './chat.js';
+import { speak, generateAudio, playAudioFile } from './tts.js';
+import { chat, chatStream, type Message } from './chat.js';
 
 function ts(): string {
   return new Date().toLocaleTimeString('ru-RU', { hour12: false });
@@ -195,15 +195,56 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       log('Вы:', userText);
       history.push({ role: 'user', content: userText });
       try {
-        log('Думаю…');
-        const reply = await chat(history);
-        history.push({ role: 'assistant', content: reply });
-        log('Ответ:', reply);
-        log('Озвучиваю…');
-        await speak(reply);
+        log('Думаю (потоковый ответ)…');
+        const stream = await chatStream(history);
+        let fullReply = '';
+        let sentenceBuffer = '';
+
+        let audioChain = Promise.resolve();
+
+        process.stdout.write(`[${ts()}] Ответ: `);
+
+        const pushSentence = (sentence: string) => {
+          const text = sentence.trim();
+          if (!text) return;
+          const downloadPromise = generateAudio(text);
+          audioChain = audioChain.then(async () => {
+            try {
+              const path = await downloadPromise;
+              if (path) {
+                await playAudioFile(path);
+                try { unlinkSync(path); } catch { /* ignore */ }
+              }
+            } catch (err) {
+              logErr('Ошибка аудио:', err);
+            }
+          });
+        };
+
+        for await (const token of stream) {
+          process.stdout.write(token);
+          fullReply += token;
+          sentenceBuffer += token;
+
+          if (sentenceBuffer.match(/[.?!;](\s|\n)+$/) || sentenceBuffer.match(/\n$/)) {
+            pushSentence(sentenceBuffer);
+            sentenceBuffer = '';
+          }
+        }
+
+        if (sentenceBuffer.trim()) {
+          pushSentence(sentenceBuffer);
+        }
+
+        console.log(); // newline
+
+        await audioChain;
+
+        history.push({ role: 'assistant', content: fullReply.trim() });
       } catch (err) {
         logErr('Ошибка:', err);
         history.pop();
+        console.log();
       }
     } finally {
       try { unlinkSync(wavPath); } catch { /* ignore */ }
