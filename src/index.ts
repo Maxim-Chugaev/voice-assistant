@@ -34,6 +34,7 @@ function ensureEnv(): void {
 
 const SAMPLE_RATE = 16000;
 const PCM_BYTES_PER_SEC = SAMPLE_RATE * 2;
+const MIC_DEVICE = process.env.MIC_DEVICE;
 
 /** Кольцевой буфер: последние N секунд PCM. */
 class RingBuffer {
@@ -113,9 +114,16 @@ const VAD_THRESHOLD = Math.max(50, Number(process.env.VAD_THRESHOLD) || 300);
 
 /** Непрерывный захват: rec -t raw в stdout. */
 function startContinuousRec(): { stream: NodeJS.ReadableStream; stop: () => void } {
-  const proc = spawn('rec', [
-    '-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-t', 'raw', '-',
-  ], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const args = ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16'];
+  if (MIC_DEVICE) {
+    args.push('-D', MIC_DEVICE);
+  }
+  args.push('-t', 'raw', '-');
+  const proc = spawn('rec', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  proc.stderr?.on('data', (chunk: Buffer) => logErr('rec:', chunk.toString().trim()));
+  proc.on('exit', (code: number | null, signal: string | null) => {
+    if (code != null && code !== 0) logErr('rec завершился:', code, signal ?? '');
+  });
   return { stream: proc.stdout!, stop: () => proc.kill('SIGTERM') };
 }
 
@@ -136,7 +144,6 @@ function stripWakeWordFromStart(text: string, wakeWord: string): string {
 
 /** Непрерывный режим: поток в кольцо, проверка по таймеру — паузы нет. */
 async function runWakeWordMode(history: Message[]): Promise<void> {
-  const exitPhrases = ['стоп', 'выход', 'хватит'];
   const RING_SEC = 6;
   const CHECK_SEC = 3;
   const CHECK_MS = 1500;
@@ -151,7 +158,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
   let phraseEndAt = 0;
   let checkTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const doCheck = async (): Promise<'exit' | 'wake' | null> => {
+  const doCheck = async (): Promise<'wake' | null> => {
     if (checkBusy || collectingPhrase) return null;
     checkBusy = true;
     const snap = ring.getLast(CHECK_SEC);
@@ -170,7 +177,6 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       const text = await transcribe(wavPath);
       const t = text.toLowerCase().trim();
       if (!t) return null;
-      if (exitPhrases.some((p) => t.includes(p))) return 'exit';
       if (transcriptHasWakeWord(text, WAKE_WORD)) return 'wake';
     } catch {
       /* ignore */
@@ -254,12 +260,6 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
   const schedule = (delay = CHECK_MS) => {
     checkTimer = setTimeout(async () => {
       const r = await doCheck();
-      if (r === 'exit') {
-        if (checkTimer) clearTimeout(checkTimer);
-        stop();
-        log('Выход.');
-        return;
-      }
       if (r === 'wake') {
         collectingPhrase = true;
         phraseChunks = [ring.getLast(RING_SEC)];
@@ -291,7 +291,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
 
   stream.on('error', (e: Error) => logErr('Микрофон:', e));
 
-  log(`Слушаю «${WAKE_WORD}» (непрерывно). «Стоп» — выход.`);
+  log(`Слушаю «${WAKE_WORD}» (непрерывно).`);
   log('');
 
   schedule(FIRST_CHECK_MS);
@@ -306,7 +306,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
 async function main(): Promise<void> {
   ensureEnv();
   log('Голосовой помощник');
-  log('Скажите «' + WAKE_WORD + '» и команду. «Стоп» — выход.');
+  log('Скажите «' + WAKE_WORD + '» и команду.');
   log('');
 
   await runWakeWordMode([]);
