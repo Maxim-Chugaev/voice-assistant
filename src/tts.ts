@@ -14,13 +14,9 @@ const TTS_VOICE = (process.env.OPENAI_TTS_VOICE ?? 'nova') as
   | 'shimmer';
 const TTS_VOLUME = parseInt(process.env.TTS_VOLUME ?? '200', 10);
 const IS_LINUX = process.platform === 'linux';
-// На Linux используем WAV + paplay (надёжно уходит в Pulse/Станцию),
-// на macOS — MP3 + afplay.
+// На Linux используем WAV + pw-play (PipeWire), на macOS — MP3 + afplay.
 const AUDIO_FORMAT = IS_LINUX ? 'wav' : 'mp3';
 const AUDIO_EXT = AUDIO_FORMAT;
-// Опционально жёстко указываем, в какой sink слать звук (PulseAudio/PipeWire),
-// чтобы не зависеть от текущего default sink.
-const TTS_SINK = process.env.TTS_SINK;
 
 export async function generateAudio(text: string): Promise<string | null> {
   if (!text.trim()) return null;
@@ -59,15 +55,9 @@ export async function speak(text: string): Promise<void> {
 export function playAudioFile(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const isMac = process.platform === 'darwin';
-    const cmd = isMac ? 'afplay' : 'paplay';
+    const cmd = isMac ? 'afplay' : 'pw-play';
     const args = [path];
-    const env = isMac
-      ? process.env
-      : {
-          ...process.env,
-          ...(TTS_SINK ? { PULSE_SINK: TTS_SINK } : {}),
-        };
-    const child = spawn(cmd, args, { stdio: 'ignore', env });
+    const child = spawn(cmd, args, { stdio: 'ignore' });
     child.on('error', reject);
     child.on('close', (code: number | null) =>
       code === 0 ? resolve() : reject(new Error(`exit ${code}`))
