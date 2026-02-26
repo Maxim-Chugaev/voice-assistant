@@ -18,6 +18,9 @@ const IS_LINUX = process.platform === 'linux';
 // на macOS — MP3 + afplay.
 const AUDIO_FORMAT = IS_LINUX ? 'wav' : 'mp3';
 const AUDIO_EXT = AUDIO_FORMAT;
+// Опционально жёстко указываем, в какой sink слать звук (PulseAudio/PipeWire),
+// чтобы не зависеть от текущего default sink.
+const TTS_SINK = process.env.TTS_SINK;
 
 export async function generateAudio(text: string): Promise<string | null> {
   if (!text.trim()) return null;
@@ -57,10 +60,14 @@ export function playAudioFile(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const isMac = process.platform === 'darwin';
     const cmd = isMac ? 'afplay' : 'paplay';
-    // Громкостью на Linux управляем через pactl (sink volume),
-    // поэтому здесь не трогаем громкость, чтобы не делать звук почти неслышным.
     const args = [path];
-    const child = spawn(cmd, args, { stdio: 'ignore' });
+    const env = isMac
+      ? process.env
+      : {
+          ...process.env,
+          ...(TTS_SINK ? { PULSE_SINK: TTS_SINK } : {}),
+        };
+    const child = spawn(cmd, args, { stdio: 'ignore', env });
     child.on('error', reject);
     child.on('close', (code: number | null) =>
       code === 0 ? resolve() : reject(new Error(`exit ${code}`))
