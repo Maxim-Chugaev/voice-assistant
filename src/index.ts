@@ -185,6 +185,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
       pcmToWav(snap, wavPath);
       const text = await transcribe(wavPath);
       const t = text.toLowerCase().trim();
+      log('wake-check:', JSON.stringify({ energy, text: t }));
       if (!t) return null;
       if (transcriptHasWakeWord(text, WAKE_WORD)) return 'wake';
     } catch {
