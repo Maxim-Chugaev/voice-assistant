@@ -57,7 +57,9 @@ export function playAudioFile(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const isMac = process.platform === 'darwin';
     const cmd = isMac ? 'afplay' : 'paplay';
-    const args = isMac ? [path] : ['--volume', String(TTS_VOLUME), path];
+    // Громкостью на Linux управляем через pactl (sink volume),
+    // поэтому здесь не трогаем громкость, чтобы не делать звук почти неслышным.
+    const args = [path];
     const child = spawn(cmd, args, { stdio: 'ignore' });
     child.on('error', reject);
     child.on('close', (code: number | null) =>
