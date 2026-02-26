@@ -5,11 +5,19 @@ import { join } from 'path';
 import { spawn } from 'child_process';
 
 const TTS_MODEL = process.env.OPENAI_TTS_MODEL ?? 'tts-1';
-const TTS_VOICE = (process.env.OPENAI_TTS_VOICE ?? 'nova') as 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+const TTS_VOICE = (process.env.OPENAI_TTS_VOICE ?? 'nova') as
+  | 'alloy'
+  | 'echo'
+  | 'fable'
+  | 'onyx'
+  | 'nova'
+  | 'shimmer';
 const TTS_VOLUME = parseInt(process.env.TTS_VOLUME ?? '200', 10);
 const IS_LINUX = process.platform === 'linux';
-const AUDIO_FORMAT = IS_LINUX ? 'opus' : 'mp3';
-const AUDIO_EXT = AUDIO_FORMAT === 'opus' ? 'opus' : 'mp3';
+// На Linux используем WAV + paplay (надёжно уходит в Pulse/Станцию),
+// на macOS — MP3 + afplay.
+const AUDIO_FORMAT = IS_LINUX ? 'wav' : 'mp3';
+const AUDIO_EXT = AUDIO_FORMAT;
 
 export async function generateAudio(text: string): Promise<string | null> {
   if (!text.trim()) return null;
@@ -26,7 +34,10 @@ export async function generateAudio(text: string): Promise<string | null> {
   });
 
   const buf = Buffer.from(await response.arrayBuffer());
-  const filePath = join(tmpdir(), `tts-${Date.now()}-${Math.floor(Math.random() * 10000)}.${AUDIO_EXT}`);
+  const filePath = join(
+    tmpdir(),
+    `tts-${Date.now()}-${Math.floor(Math.random() * 10000)}.${AUDIO_EXT}`,
+  );
   writeFileSync(filePath, buf);
   return filePath;
 }
@@ -45,9 +56,9 @@ export async function speak(text: string): Promise<void> {
 export function playAudioFile(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const isMac = process.platform === 'darwin';
-    const child = spawn(isMac ? 'afplay' : 'mpv', isMac ? [path] : ['--no-video', `--volume=${TTS_VOLUME}`, path], {
-      stdio: 'ignore',
-    });
+    const cmd = isMac ? 'afplay' : 'paplay';
+    const args = isMac ? [path] : ['--volume', String(TTS_VOLUME), path];
+    const child = spawn(cmd, args, { stdio: 'ignore' });
     child.on('error', reject);
     child.on('close', (code: number | null) =>
       code === 0 ? resolve() : reject(new Error(`exit ${code}`))
