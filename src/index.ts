@@ -32,7 +32,7 @@ function ensureEnv(): void {
   }
 }
 
-const SAMPLE_RATE = 16000;
+const SAMPLE_RATE = 48000;
 const PCM_BYTES_PER_SEC = SAMPLE_RATE * 2;
 const MIC_DEVICE = process.env.MIC_DEVICE;
 const DEBUG_PLAY_BEFORE_WHISPER =
