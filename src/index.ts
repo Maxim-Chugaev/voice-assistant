@@ -114,12 +114,12 @@ const VAD_THRESHOLD = Math.max(50, Number(process.env.VAD_THRESHOLD) || 300);
 
 /** Непрерывный захват: rec -t raw в stdout. */
 function startContinuousRec(): { stream: NodeJS.ReadableStream; stop: () => void } {
-  const args = ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16'];
+  const args = ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-t', 'raw', '-'];
+  const env = { ...process.env };
   if (MIC_DEVICE) {
-    args.push('-D', MIC_DEVICE);
+    env.AUDIODEV = MIC_DEVICE;
   }
-  args.push('-t', 'raw', '-');
-  const proc = spawn('rec', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawn('rec', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
   proc.stderr?.on('data', (chunk: Buffer) => logErr('rec:', chunk.toString().trim()));
   proc.on('exit', (code: number | null, signal: string | null) => {
     if (code != null && code !== 0) logErr('rec завершился:', code, signal ?? '');
