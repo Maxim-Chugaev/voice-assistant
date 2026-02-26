@@ -21,9 +21,19 @@ export async function transcribe(inputPath: string): Promise<string> {
     response_format: 'text',
     ...(prompt ? { prompt: prompt.slice(0, 500) } : {}),
   });
-  const result = (typeof transcription === 'string' ? transcription : String((transcription as { text?: string }).text ?? '')).trim();
-  if (isPromptEcho(result, prompt)) return '';
-  return result;
+  const raw = (typeof transcription === 'string'
+    ? transcription
+    : String((transcription as { text?: string }).text ?? '')
+  ).trim();
+  console.log(
+    '[transcribe]',
+    JSON.stringify({
+      model,
+      text: raw,
+    }),
+  );
+  if (isPromptEcho(raw, prompt)) return '';
+  return raw;
 }
 
 /** Whisper на тишине/шуме возвращает промпт как «транскрипт» — отсекаем. */
