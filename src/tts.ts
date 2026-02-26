@@ -7,6 +7,9 @@ import { spawn } from 'child_process';
 const TTS_MODEL = process.env.OPENAI_TTS_MODEL ?? 'tts-1';
 const TTS_VOICE = (process.env.OPENAI_TTS_VOICE ?? 'nova') as 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 const TTS_VOLUME = parseInt(process.env.TTS_VOLUME ?? '200', 10);
+const IS_LINUX = process.platform === 'linux';
+const AUDIO_FORMAT = IS_LINUX ? 'opus' : 'mp3';
+const AUDIO_EXT = AUDIO_FORMAT === 'opus' ? 'opus' : 'mp3';
 
 export async function generateAudio(text: string): Promise<string | null> {
   if (!text.trim()) return null;
@@ -19,11 +22,11 @@ export async function generateAudio(text: string): Promise<string | null> {
     model: TTS_MODEL,
     voice: TTS_VOICE,
     input: text,
-    response_format: 'opus',
+    response_format: AUDIO_FORMAT,
   });
 
   const buf = Buffer.from(await response.arrayBuffer());
-  const filePath = join(tmpdir(), `tts-${Date.now()}-${Math.floor(Math.random() * 10000)}.opus`);
+  const filePath = join(tmpdir(), `tts-${Date.now()}-${Math.floor(Math.random() * 10000)}.${AUDIO_EXT}`);
   writeFileSync(filePath, buf);
   return filePath;
 }
