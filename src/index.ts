@@ -112,14 +112,23 @@ function pcmRms(pcm: Buffer): number {
 
 const VAD_THRESHOLD = Math.max(50, Number(process.env.VAD_THRESHOLD) || 300);
 
-/** Непрерывный захват: rec -t raw в stdout. */
+/** Непрерывный захват аудио в stdout. На Linux используем arecord, на macOS — rec. */
 function startContinuousRec(): { stream: NodeJS.ReadableStream; stop: () => void } {
-  const args = ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-t', 'raw', '-'];
-  const env = { ...process.env };
-  if (MIC_DEVICE) {
-    env.AUDIODEV = MIC_DEVICE;
+  const isLinux = process.platform === 'linux';
+
+  if (isLinux) {
+    const dev = MIC_DEVICE || 'hw:2,0';
+    const args = ['-q', '-D', dev, '-f', 'S16_LE', '-r', String(SAMPLE_RATE), '-c', '1', '-t', 'raw'];
+    const proc = spawn('arecord', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    proc.stderr?.on('data', (chunk: Buffer) => logErr('arecord:', chunk.toString().trim()));
+    proc.on('exit', (code: number | null, signal: string | null) => {
+      if (code != null && code !== 0) logErr('arecord завершился:', code, signal ?? '');
+    });
+    return { stream: proc.stdout!, stop: () => proc.kill('SIGTERM') };
   }
-  const proc = spawn('rec', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+
+  const args = ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-t', 'raw', '-'];
+  const proc = spawn('rec', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stderr?.on('data', (chunk: Buffer) => logErr('rec:', chunk.toString().trim()));
   proc.on('exit', (code: number | null, signal: string | null) => {
     if (code != null && code !== 0) logErr('rec завершился:', code, signal ?? '');
