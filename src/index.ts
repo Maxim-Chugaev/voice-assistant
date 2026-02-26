@@ -35,6 +35,9 @@ function ensureEnv(): void {
 const SAMPLE_RATE = 16000;
 const PCM_BYTES_PER_SEC = SAMPLE_RATE * 2;
 const MIC_DEVICE = process.env.MIC_DEVICE;
+const DEBUG_PLAY_BEFORE_WHISPER =
+  (process.env.DEBUG_PLAY_BEFORE_WHISPER ?? '').toLowerCase() === '1' ||
+  (process.env.DEBUG_PLAY_BEFORE_WHISPER ?? '').toLowerCase() === 'true';
 
 /** Кольцевой буфер: последние N секунд PCM. */
 class RingBuffer {
@@ -79,6 +82,19 @@ class RingBuffer {
       this.buf.subarray(0, take - (this.size - start)),
     ]);
   }
+}
+
+async function debugPlayWav(path: string, label: string): Promise<void> {
+  if (!DEBUG_PLAY_BEFORE_WHISPER) return;
+  const isMac = process.platform === 'darwin';
+  const cmd = isMac ? 'afplay' : 'mpv';
+  const args = isMac ? [path] : ['--no-video', path];
+  log(`DEBUG: проигрываю ${label} перед Whisper: ${path}`);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'ignore' });
+    child.on('error', reject);
+    child.on('close', () => resolve());
+  });
 }
 
 function pcmToWav(pcm: Buffer, outPath: string): void {
@@ -183,6 +199,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
     const wavPath = join(tmpdir(), `wake-${Date.now()}.wav`);
     try {
       pcmToWav(snap, wavPath);
+      await debugPlayWav(wavPath, 'wake');
       const text = await transcribe(wavPath);
       const t = text.toLowerCase().trim();
       log('wake-check:', JSON.stringify({ energy, text: t }));
@@ -201,6 +218,7 @@ async function runWakeWordMode(history: Message[]): Promise<void> {
     const wavPath = join(tmpdir(), `phrase-${Date.now()}.wav`);
     try {
       pcmToWav(pcm, wavPath);
+      await debugPlayWav(wavPath, 'phrase');
       let userText = await transcribe(wavPath);
       userText = (userText ?? '').trim();
       userText = stripWakeWordFromStart(userText, WAKE_WORD) || userText;
