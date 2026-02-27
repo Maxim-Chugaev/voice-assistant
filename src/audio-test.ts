@@ -29,7 +29,7 @@ mic.stream().on("data", (chunk: Buffer) => {
     const pcm = new Int16Array(
       frame.buffer,
       frame.byteOffset,
-      frameLength
+      frameLength,
     );
 
     const result = porcupine.process(pcm);
@@ -40,3 +40,4 @@ mic.stream().on("data", (chunk: Buffer) => {
 });
 
 mic.start();
+

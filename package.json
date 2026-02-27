@@ -6,8 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "audio-test": "tsc && node dist/audio-test.js",
-    "start": "node dist/index.js",
+    "start": "node dist/index.js 2>/dev/null",
     "dev": "tsc && node dist/index.js"
   },
   "keywords": [
