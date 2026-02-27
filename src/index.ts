@@ -10,6 +10,17 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// Фильтруем шумный warning из CoreAudio/mpg123 о buffer underflow,
+// чтобы он не засорял логи.
+const origStderrWrite = (process.stderr.write as any).bind(process.stderr);
+(process.stderr as any).write = (chunk: any, ...args: any[]) => {
+  const msg = chunk instanceof Buffer ? chunk.toString("utf8") : String(chunk);
+  if (msg.includes("Didn't have any audio data in callback (buffer underflow)")) {
+    return true;
+  }
+  return origStderrWrite(chunk, ...args);
+};
+
 async function main() {
   const porcupineAccessKey = process.env.PORCUPINE_ACCESS_KEY;
   const porcupineKeywordPath = process.env.PORCUPINE_KEYWORD_PATH;
@@ -18,7 +29,7 @@ async function main() {
   ).toLowerCase();
   const wakeWindowMs = Number(process.env.WAKE_WINDOW_MS ?? "8000");
   const gateSilenceMs = Number(process.env.GATE_SILENCE_MS ?? "1200");
-  const minRms = Number(process.env.MIN_RMS ?? "250");
+  const minRms = Number(process.env.MIN_RMS ?? "200");
   const wakeDebounceMs = Number(process.env.WAKE_DEBOUNCE_MS ?? "1500");
 
   if (!porcupineAccessKey) {
