@@ -111,6 +111,7 @@ async function main() {
   let lastSpeechAt = 0;
   let lastWakeDetectedAt = 0;
   let hasUserSpeechInGate = false;
+  let beepPlaying = false;
   let wakeBuffer = Buffer.alloc(0);
 
   const isSpeechChunk = (pcm16: Buffer): boolean => {
@@ -161,10 +162,11 @@ async function main() {
         hasUserSpeechInGate = false;
         lastSpeechAt = now;
         console.log("Wake word detected");
+        playBeep();
       }
     }
 
-    if (assistantSpeaking) return;
+    if (assistantSpeaking || beepPlaying) return;
     if (Date.now() > gateOpenUntil) return;
 
     const hasSpeech = isSpeechChunk(chunk);
@@ -194,6 +196,41 @@ async function main() {
       console.error("Speaker error:", err);
     }
   });
+
+  const beepDurationMs = Number(process.env.BEEP_DURATION_MS ?? "150");
+  const beepFreq = Number(process.env.BEEP_FREQ ?? "880");
+  const beepBuffer = (() => {
+    const sampleRate = 24000;
+    const samples = Math.max(
+      1,
+      Math.floor((sampleRate * beepDurationMs) / 1000),
+    );
+    const arr = new Int16Array(samples);
+    const amplitude = 0.25 * 0x7fff;
+    for (let i = 0; i < samples; i++) {
+      const t = i / sampleRate;
+      arr[i] = Math.round(
+        amplitude * Math.sin(2 * Math.PI * beepFreq * t),
+      );
+    }
+    return Buffer.from(arr.buffer);
+  })();
+
+  const playBeep = () => {
+    if (beepPlaying) return;
+    beepPlaying = true;
+    try {
+      speaker.write(beepBuffer);
+    } catch (err: any) {
+      if (!err || err.code !== "EPIPE") {
+        console.error("Beep write error:", err);
+      }
+    } finally {
+      setTimeout(() => {
+        beepPlaying = false;
+      }, beepDurationMs + 50);
+    }
+  };
 
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
