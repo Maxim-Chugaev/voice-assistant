@@ -41,6 +41,12 @@ async function main() {
           transcription: {
             model: "gpt-4o-mini-transcribe",
           },
+          turnDetection: {
+            type: "semantic_vad",
+            eagerness: "medium",
+            createResponse: true,
+            interruptResponse: true,
+          },
         },
         output: {
           format: "pcm16",
@@ -103,34 +109,7 @@ async function main() {
   let gateOpenUntil = 0;
   let lastSpeechAt = 0;
   let lastWakeDetectedAt = 0;
-  let audioActive = false;
-  let finalizingUtterance = false;
   let wakeBuffer = Buffer.alloc(0);
-
-  const sessionAny = session as any;
-  const canManualFinalize =
-    typeof sessionAny.commitAudio === "function" &&
-    typeof sessionAny.createResponse === "function";
-  if (!canManualFinalize) {
-    console.warn(
-      "Manual finalize methods are unavailable; using SDK auto turn handling.",
-    );
-  }
-  const finalizeUtterance = async () => {
-    if (!audioActive || finalizingUtterance) return;
-    finalizingUtterance = true;
-    audioActive = false;
-    try {
-      if (canManualFinalize) {
-        await sessionAny.commitAudio();
-        await sessionAny.createResponse();
-      }
-    } catch (err) {
-      console.error("Failed to finalize utterance:", err);
-    } finally {
-      finalizingUtterance = false;
-    }
-  };
 
   const isSpeechChunk = (pcm16: Buffer): boolean => {
     if (pcm16.length < 2) return false;
@@ -183,32 +162,27 @@ async function main() {
     }
 
     if (assistantSpeaking) return;
-    if (Date.now() > gateOpenUntil) {
-      void finalizeUtterance();
-      return;
+    if (Date.now() > gateOpenUntil) return;
+
+    const hasSpeech = isSpeechChunk(chunk);
+    if (hasSpeech) {
+      lastSpeechAt = Date.now();
+    } else if (Date.now() - lastSpeechAt > gateSilenceMs) {
+      gateOpenUntil = 0;
     }
-    if (!isSpeechChunk(chunk)) {
-      if (Date.now() - lastSpeechAt > gateSilenceMs) {
-        gateOpenUntil = 0;
-        void finalizeUtterance();
-      }
-      return;
-    }
-    lastSpeechAt = Date.now();
 
     const ab = chunk.buffer.slice(
       chunk.byteOffset,
       chunk.byteOffset + chunk.byteLength,
     ) as ArrayBuffer;
     session.sendAudio(ab);
-    audioActive = true;
   });
 
   // 🔊 Аудио ответ
   const speaker = new Speaker({
     channels: 1,
     bitDepth: 16,
-    sampleRate: 16000,
+    sampleRate: 24000,
   });
 
   speaker.on("error", (err: any) => {
