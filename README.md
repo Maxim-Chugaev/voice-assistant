@@ -1,21 +1,24 @@
-# Голосовой помощник
+## Голосовой ассистент (OpenAI Realtime + Porcupine)
 
-Голосовой помощник на **Node.js/TypeScript**, полностью на базе **OpenAI API**: ChatGPT (чат), Whisper (распознавание речи), TTS (синтез речи).
+Голосовой ассистент на **Node.js/TypeScript**, построенный на **OpenAI Realtime API**:
+распознавание речи, чат и синтез голоса происходят внутри одной realtime-сессии.
+Активация по локальному wake word через **Picovoice Porcupine**.
 
-## Возможности
+### Возможности
 
-- **STT** — распознавание речи через OpenAI Whisper API.
-- **TTS** — синтез речи через OpenAI TTS API (голос `nova` по умолчанию).
-- **ChatGPT** — ответы генерирует OpenAI API.
-- **Wake word** — непрерывное прослушивание, реагирует на «альтрон» (настраивается). VAD отсекает тишину — Whisper не вызывается зря.
+- **Локальный wake word**: по умолчанию слово `jarvis` (или другой доступный builtin, либо свой `.ppn`).
+- **Gate-окно**: после wake word микрофон попадает в «окно» фиксированной длины и только в нём стримится в Realtime API.
+- **Локальный VAD (RMS)**: внутри окна тишина/шум отсекаются и окно может закрыться раньше по `GATE_SILENCE_MS`.
+- **Авто-завершение фразы**: на стороне OpenAI включён `semantic_vad` с `createResponse`, поэтому модель сама понимает, когда вы договорили.
+- **Barge‑in**: если сказать wake word, пока ассистент говорит, текущий ответ прерывается и начинается новый.
+- **Само-защита от самопереговора**: пока ассистент произносит ответ, микрофон не стримится в Realtime API.
 
 ## Требования
 
 - **Node.js** 18+
-- **SoX** — для записи с микрофона:
-  - macOS: `brew install sox`
-  - Linux: `sudo apt install sox libsox-fmt-all`
-- **OpenAI API key** — для ChatGPT, Whisper и TTS.
+- **OpenAI API key** — для Realtime API (`gpt-realtime`).
+- **Picovoice Porcupine AccessKey** — для локального wake word.
+- Рабочий микрофон и аудиовыход (на macOS и Linux доп. системные пакеты обычно не нужны — запись идёт через `node-record-lpcm16`, вывод через `speaker`).
 
 ## Установка
 
@@ -23,54 +26,97 @@
 cd voice-assistant
 yarn install
 cp .env.example .env
-# Отредактируйте .env и укажите OPENAI_API_KEY=sk-...
+# Отредактируйте .env и укажите:
+# - OPENAI_API_KEY=sk-...
+# - PORCUPINE_ACCESS_KEY=...
 ```
 
 ## Запуск
 
-```bash
-yarn dev
-```
-
-Или раздельно:
+Собрать и запустить:
 
 ```bash
 yarn build
 yarn start
 ```
 
+Или одномоментно (быстрый запуск после правок):
+
+```bash
+yarn dev
+```
+
+Проверка одного только wake word (без Realtime API):
+
+```bash
+yarn audio-test
+```
+
+## Как это работает
+
+1. При старте создаётся `RealtimeAgent` и `RealtimeSession` с моделью `gpt-realtime` и конфигом:
+   - `audio.input.format = "pcm16"`
+   - `audio.input.transcription.model = "gpt-4o-mini-transcribe"`
+   - `audio.input.turnDetection = semantic_vad + createResponse`
+   - `audio.output.format = "pcm16"` (24 kHz)
+2. Микрофон читает **16 kHz mono PCM16** через `node-record-lpcm16`.
+3. Поток идёт в Porcupine (локально на CPU). При детекте wake word:
+   - открывается gate‑окно на `WAKE_WINDOW_MS` миллисекунд,
+   - запоминается время последней речи.
+4. Пока окно открыто:
+   - все аудиочанки стримятся в `session.sendAudio(...)`;
+   - локальный RMS‑VAD (`MIN_RMS`) следит за наличием речи и может закрыть окно раньше после `GATE_SILENCE_MS` тишины.
+5. Realtime‑модель сама детектит конец фразы (`semantic_vad`) и начинает говорить.
+6. Событие `session.on("audio")` отдаёт PCM‑чанки, которые воспроизводятся через `speaker` (24 kHz).
+
 ## Использование
 
-При запуске помощник непрерывно слушает микрофон. Скажите **«альтрон»** (или другое wake word из `.env`) и сразу свой вопрос. Помощник распознает речь, отправит в ChatGPT, озвучит ответ. Скажите **«стоп»** для выхода.
+1. Запустите ассистента (`yarn start` или `yarn dev`).
+2. В консоли должно появиться:
+   - `Connected. Say wake-word to activate…`
+   - `Wake-word active: jarvis` (или ваше слово).
+3. Скажите чётко wake word (например, **«jarvis»**), дождитесь в логах `Wake word detected`.
+4. Сразу после wake word произнесите команду:
+   - «какая сегодня погода»
+   - «что умеешь»
+   - «расскажи шутку»
+5. Ассистент распознает фразу и вслух ответит.
+6. Чтобы прервать текущий ответ и начать новый, снова скажите wake word.
 
 ## Переменные окружения (.env)
 
+Смотри пример в `.env.example`. Кратко:
+
 | Переменная | Описание |
-|---|---|
-| `OPENAI_API_KEY` | Ключ API OpenAI (обязательно) |
-| `OPENAI_MODEL` | Модель чата (по умолчанию: `gpt-4o-mini`) |
-| `WAKE_WORD` | Wake word (по умолчанию: `альтрон`) |
-| `WAKE_WORD_PHRASE_SECONDS` | Длина записи фразы после wake word, сек (4–12, по умолчанию 6) |
-| `VAD_THRESHOLD` | Порог VAD — RMS энергия аудио (по умолчанию 300). Тишина ~0–200, речь ~500+ |
-| `OPENAI_WHISPER_PROMPT` | Подсказка для Whisper: контекст и частые слова (до ~224 токенов) |
-| `OPENAI_WHISPER_MODEL` | Модель STT: `whisper-1` (по умолчанию) или `gpt-4o-transcribe` |
-| `OPENAI_TTS_MODEL` | Модель TTS: `tts-1` (по умолчанию) или `tts-1-hd` |
-| `OPENAI_TTS_VOICE` | Голос TTS: `alloy`, `echo`, `fable`, `onyx`, `nova` (по умолчанию), `shimmer` |
+| --- | --- |
+| `OPENAI_API_KEY` | Ключ API OpenAI (обязательно). |
+| `PORCUPINE_ACCESS_KEY` | AccessKey Picovoice (обязательно для wake word). |
+| `PORCUPINE_BUILTIN_KEYWORD` | Встроенное wake word (по умолчанию `jarvis`). Если не поддерживается на вашей платформе, код сам подберёт другое из списка. |
+| `PORCUPINE_KEYWORD_PATH` | Путь к кастомному `.ppn` (имеет приоритет над builtin). |
+| `WAKE_WINDOW_MS` | Сколько миллисекунд после wake word стримить речь в Realtime API (по умолчанию 8000). |
+| `GATE_SILENCE_MS` | Закрыть окно, если столько миллисекунд нет речи (по умолчанию 1200). |
+| `MIN_RMS` | Порог RMS для локального VAD (по умолчанию 200). Меньше — чувствительнее к тихой речи. |
+| `WAKE_DEBOUNCE_MS` | Антидребезг для wake word (по умолчанию 1500 мс). |
 
-## Стоимость
+## Типичные проблемы и подсказки
 
-Всё работает через OpenAI API:
+- **Wake word срабатывает не всегда**:
+  - немного понизьте `MIN_RMS` (например, до `150`);
+  - говорите wake word чуть громче и ближе к микрофону;
+  - при необходимости сократите `WAKE_DEBOUNCE_MS`, если часто триггерите подряд осознанно.
 
-- **Whisper** — ~$0.006/мин. VAD отсекает тишину, поэтому в тихой комнате запросы идут только когда вы говорите.
-- **TTS** — ~$0.015/1000 символов (`tts-1`), ~$0.030 (`tts-1-hd`).
-- **ChatGPT** — зависит от модели и длины диалога.
+- **Ответы иногда не приходят**:
+  - убедитесь, что после `Wake word detected` вы действительно говорите в течение окна (`WAKE_WINDOW_MS`);
+  - проверьте, что ключ `OPENAI_API_KEY` активен и имеет доступ к `gpt-realtime`.
+
+- **Логи забиты предупреждениями CoreAudio/mpg123**:
+  - в текущей версии проекта шумный warning про `buffer underflow` в аудио‑коллбэке уже фильтруется и не мешает.
 
 ## Структура проекта
 
-- `src/index.ts` — wake word, VAD, кольцевой буфер, основной цикл.
-- `src/stt.ts` — распознавание речи (OpenAI Whisper API).
-- `src/tts.ts` — синтез речи (OpenAI TTS API) и воспроизведение (afplay/mpv).
-- `src/chat.ts` — запросы к ChatGPT (OpenAI API).
+- `src/index.ts` — основной ассистент: Porcupine, wake word, gate‑окно, локальный VAD, RealtimeSession, вывод звука.
+- `src/audio-test.ts` — минимальный тест Porcupine/wake word без подключения к OpenAI.
+- `src/types/external-modules.d.ts` — декларации для внешних модулей без типов (`node-record-lpcm16`, `speaker`, `@picovoice/porcupine-node`).
 
 ## Лицензия
 

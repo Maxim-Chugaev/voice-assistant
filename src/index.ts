@@ -120,6 +120,7 @@ async function main() {
   let gateOpenUntil = 0;
   let lastSpeechAt = 0;
   let lastWakeDetectedAt = 0;
+  let hasUserSpeechInGate = false;
   let wakeBuffer = Buffer.alloc(0);
 
   const isSpeechChunk = (pcm16: Buffer): boolean => {
@@ -167,6 +168,7 @@ async function main() {
           assistantSpeaking = false;
         }
         gateOpenUntil = now + wakeWindowMs;
+        hasUserSpeechInGate = false;
         lastSpeechAt = now;
         console.log("Wake word detected");
       }
@@ -177,8 +179,9 @@ async function main() {
 
     const hasSpeech = isSpeechChunk(chunk);
     if (hasSpeech) {
+      hasUserSpeechInGate = true;
       lastSpeechAt = Date.now();
-    } else if (Date.now() - lastSpeechAt > gateSilenceMs) {
+    } else if (hasUserSpeechInGate && Date.now() - lastSpeechAt > gateSilenceMs) {
       gateOpenUntil = 0;
     }
 
