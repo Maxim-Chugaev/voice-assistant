@@ -1,344 +1,250 @@
-import { config } from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import {
+  RealtimeAgent,
+  RealtimeSession,
+  type TransportLayerAudio,
+} from "@openai/agents/realtime";
+import { Porcupine } from "@picovoice/porcupine-node";
+import record from "node-record-lpcm16";
+import Speaker from "speaker";
+import dotenv from "dotenv";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: join(__dirname, '..', '.env') });
+dotenv.config();
 
-import { unlinkSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { spawn } from 'child_process';
-import { transcribe } from './stt.js';
-import { speak, generateAudio, playAudioFile } from './tts.js';
-import { chat, chatStream, type Message } from './chat.js';
+async function main() {
+  const porcupineAccessKey = process.env.PORCUPINE_ACCESS_KEY;
+  const porcupineKeywordPath = process.env.PORCUPINE_KEYWORD_PATH;
+  const preferredBuiltinWakeWord = (
+    process.env.PORCUPINE_BUILTIN_KEYWORD ?? "jarvis"
+  ).toLowerCase();
+  const wakeWindowMs = Number(process.env.WAKE_WINDOW_MS ?? "8000");
+  const gateSilenceMs = Number(process.env.GATE_SILENCE_MS ?? "1200");
+  const minRms = Number(process.env.MIN_RMS ?? "250");
+  const wakeDebounceMs = Number(process.env.WAKE_DEBOUNCE_MS ?? "1500");
 
-function ts(): string {
-  return new Date().toLocaleTimeString('ru-RU', { hour12: false });
-}
-function log(...args: unknown[]): void {
-  console.log(`[${ts()}]`, ...args);
-}
-function logErr(...args: unknown[]): void {
-  console.error(`[${ts()}]`, ...args);
-}
-
-const WAKE_WORD = process.env.WAKE_WORD ?? 'альтрон';
-
-function ensureEnv(): void {
-  if (!process.env.OPENAI_API_KEY) {
-    logErr('Задайте OPENAI_API_KEY в .env или в окружении.');
-    logErr('Скопируйте .env.example в .env и укажите ключ.');
-    process.exit(1);
-  }
-}
-
-const SAMPLE_RATE = 48000;
-const PCM_BYTES_PER_SEC = SAMPLE_RATE * 2;
-const MIC_DEVICE = process.env.MIC_DEVICE;
-const DEBUG_PLAY_BEFORE_WHISPER =
-  (process.env.DEBUG_PLAY_BEFORE_WHISPER ?? '').toLowerCase() === '1' ||
-  (process.env.DEBUG_PLAY_BEFORE_WHISPER ?? '').toLowerCase() === 'true';
-
-/** Кольцевой буфер: последние N секунд PCM. */
-class RingBuffer {
-  private buf: Buffer;
-  private size: number;
-  private pos = 0;
-  private filled = 0;
-
-  constructor(seconds: number) {
-    this.size = seconds * PCM_BYTES_PER_SEC;
-    this.buf = Buffer.alloc(this.size);
+  if (!porcupineAccessKey) {
+    throw new Error("Set PORCUPINE_ACCESS_KEY in .env");
   }
 
-  push(chunk: Buffer): void {
-    if (chunk.length >= this.size) {
-      chunk.copy(this.buf, 0, chunk.length - this.size);
-      this.pos = 0;
-      this.filled = this.size;
+  const agent = new RealtimeAgent({
+    name: "Assistant",
+    instructions: "Ты полезный голосовой ассистент. Отвечай коротко и по делу.",
+  });
+
+  const session = new RealtimeSession(agent, {
+    model: "gpt-realtime",
+    transport: "websocket",
+    config: {
+      outputModalities: ["audio"],
+      audio: {
+        input: {
+          format: "pcm16",
+          transcription: {
+            model: "gpt-4o-mini-transcribe",
+          },
+        },
+        output: {
+          format: "pcm16",
+        },
+      },
+    },
+  });
+
+  await session.connect({
+    apiKey: process.env.OPENAI_API_KEY!,
+  });
+
+  console.log("Connected. Say wake-word to activate…");
+
+  let porcupine: any = null;
+  let activeWakeWordLabel = "";
+
+  if (porcupineKeywordPath) {
+    porcupine = new Porcupine(
+      porcupineAccessKey,
+      [porcupineKeywordPath],
+      [0.65],
+    );
+    activeWakeWordLabel = `custom(${porcupineKeywordPath})`;
+  } else {
+    const candidates = [
+      preferredBuiltinWakeWord,
+      "jarvis",
+      "porcupine",
+      "picovoice",
+      "bumblebee",
+      "grasshopper",
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        // Porcupine runtime validates supported builtin keywords.
+        porcupine = new Porcupine(
+          porcupineAccessKey,
+          [candidate],
+          [0.65],
+        );
+        activeWakeWordLabel = candidate;
+        break;
+      } catch {
+        // try next builtin keyword
+      }
+    }
+    if (!porcupine) {
+      throw new Error(
+        "No supported builtin wake-word found. Set PORCUPINE_KEYWORD_PATH to your .ppn file.",
+      );
+    }
+  }
+  console.log(`Wake-word active: ${activeWakeWordLabel}`);
+  const frameLength = porcupine.frameLength;
+  const frameBytes = frameLength * 2;
+
+  let assistantSpeaking = false;
+  let gateOpenUntil = 0;
+  let lastSpeechAt = 0;
+  let lastWakeDetectedAt = 0;
+  let audioActive = false;
+  let finalizingUtterance = false;
+  let wakeBuffer = Buffer.alloc(0);
+
+  const sessionAny = session as any;
+  const canManualFinalize =
+    typeof sessionAny.commitAudio === "function" &&
+    typeof sessionAny.createResponse === "function";
+  if (!canManualFinalize) {
+    console.warn(
+      "Manual finalize methods are unavailable; using SDK auto turn handling.",
+    );
+  }
+  const finalizeUtterance = async () => {
+    if (!audioActive || finalizingUtterance) return;
+    finalizingUtterance = true;
+    audioActive = false;
+    try {
+      if (canManualFinalize) {
+        await sessionAny.commitAudio();
+        await sessionAny.createResponse();
+      }
+    } catch (err) {
+      console.error("Failed to finalize utterance:", err);
+    } finally {
+      finalizingUtterance = false;
+    }
+  };
+
+  const isSpeechChunk = (pcm16: Buffer): boolean => {
+    if (pcm16.length < 2) return false;
+    let sum = 0;
+    const samples = pcm16.length >> 1;
+    for (let i = 0; i < pcm16.length; i += 2) {
+      const s = pcm16.readInt16LE(i);
+      sum += s * s;
+    }
+    const rms = Math.sqrt(sum / Math.max(samples, 1));
+    return rms >= minRms;
+  };
+
+  // 🎤 Микрофон
+  const mic = record.record({
+    sampleRate: 16000,
+    channels: 1,
+    audioType: "raw",
+  });
+
+  mic.stream().on("data", (chunk: Buffer) => {
+    wakeBuffer = Buffer.concat([wakeBuffer, chunk]);
+    while (wakeBuffer.length >= frameBytes) {
+      const frame = wakeBuffer.subarray(0, frameBytes);
+      wakeBuffer = wakeBuffer.subarray(frameBytes);
+
+      const pcmFrame = new Int16Array(
+        frame.buffer,
+        frame.byteOffset,
+        frameLength,
+      );
+      const keywordIndex = porcupine.process(pcmFrame);
+      if (keywordIndex >= 0) {
+        const now = Date.now();
+        const inDebounce = now - lastWakeDetectedAt < wakeDebounceMs;
+        const gateAlreadyOpen = now <= gateOpenUntil && !assistantSpeaking;
+        if (inDebounce || gateAlreadyOpen) {
+          continue;
+        }
+        lastWakeDetectedAt = now;
+
+        if (assistantSpeaking) {
+          (session as any).interrupt?.();
+          assistantSpeaking = false;
+        }
+        gateOpenUntil = now + wakeWindowMs;
+        lastSpeechAt = now;
+        console.log("Wake word detected");
+      }
+    }
+
+    if (assistantSpeaking) return;
+    if (Date.now() > gateOpenUntil) {
+      void finalizeUtterance();
       return;
     }
-    const start = this.pos;
-    if (chunk.length <= this.size - start) {
-      chunk.copy(this.buf, start);
-    } else {
-      const first = this.size - start;
-      chunk.copy(this.buf, start, 0, first);
-      chunk.copy(this.buf, 0, first);
+    if (!isSpeechChunk(chunk)) {
+      if (Date.now() - lastSpeechAt > gateSilenceMs) {
+        gateOpenUntil = 0;
+        void finalizeUtterance();
+      }
+      return;
     }
-    this.pos = (this.pos + chunk.length) % this.size;
-    this.filled = Math.min(this.filled + chunk.length, this.size);
-  }
+    lastSpeechAt = Date.now();
 
-  /** Последние `seconds` секунд (не больше реально записанного). */
-  getLast(seconds: number): Buffer {
-    const want = seconds * PCM_BYTES_PER_SEC;
-    const take = Math.min(want, this.filled);
-    if (take === 0) return Buffer.alloc(0);
-    const start = (this.pos - take + this.size) % this.size;
-    if (start + take <= this.size) return this.buf.subarray(start, start + take);
-    return Buffer.concat([
-      this.buf.subarray(start, this.size),
-      this.buf.subarray(0, take - (this.size - start)),
-    ]);
-  }
-}
-
-async function debugPlayWav(path: string, label: string): Promise<void> {
-  if (!DEBUG_PLAY_BEFORE_WHISPER) return;
-  const isMac = process.platform === 'darwin';
-  const cmd = isMac ? 'afplay' : 'mpv';
-  const args = isMac ? [path] : ['--no-video', path];
-  log(`DEBUG: проигрываю ${label} перед Whisper: ${path}`);
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'ignore' });
-    child.on('error', reject);
-    child.on('close', () => resolve());
+    const ab = chunk.buffer.slice(
+      chunk.byteOffset,
+      chunk.byteOffset + chunk.byteLength,
+    ) as ArrayBuffer;
+    session.sendAudio(ab);
+    audioActive = true;
   });
-}
 
-function pcmToWav(pcm: Buffer, outPath: string): void {
-  const h = Buffer.alloc(44);
-  h.write('RIFF', 0);
-  h.writeUInt32LE(36 + pcm.length, 4);
-  h.write('WAVE', 8);
-  h.write('fmt ', 12);
-  h.writeUInt32LE(16, 16);
-  h.writeUInt16LE(1, 20);
-  h.writeUInt16LE(1, 22);
-  h.writeUInt32LE(SAMPLE_RATE, 24);
-  h.writeUInt32LE(SAMPLE_RATE * 2, 28);
-  h.writeUInt16LE(2, 32);
-  h.writeUInt16LE(16, 34);
-  h.write('data', 36);
-  h.writeUInt32LE(pcm.length, 40);
-  writeFileSync(outPath, Buffer.concat([h, pcm]));
-}
-
-/** RMS энергия PCM-буфера (16-bit LE mono). Тишина ~0–200, речь ~500–5000+. */
-function pcmRms(pcm: Buffer): number {
-  let sum = 0;
-  const samples = pcm.length >> 1;
-  for (let i = 0; i < pcm.length; i += 2) {
-    const s = pcm.readInt16LE(i);
-    sum += s * s;
-  }
-  return Math.sqrt(sum / (samples || 1));
-}
-
-const VAD_THRESHOLD = Math.max(50, Number(process.env.VAD_THRESHOLD) || 300);
-
-/** Непрерывный захват аудио в stdout. На Linux используем arecord, на macOS — rec. */
-function startContinuousRec(): { stream: NodeJS.ReadableStream; stop: () => void } {
-  const isLinux = process.platform === 'linux';
-
-  if (isLinux) {
-    const dev = MIC_DEVICE || 'hw:2,0';
-    const args = ['-q', '-D', dev, '-f', 'S16_LE', '-r', String(SAMPLE_RATE), '-c', '1', '-t', 'raw'];
-    const proc = spawn('arecord', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    proc.stderr?.on('data', (chunk: Buffer) => logErr('arecord:', chunk.toString().trim()));
-    proc.on('exit', (code: number | null, signal: string | null) => {
-      if (code != null && code !== 0) logErr('arecord завершился:', code, signal ?? '');
-    });
-    return { stream: proc.stdout!, stop: () => proc.kill('SIGTERM') };
-  }
-
-  const args = ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-t', 'raw', '-'];
-  const proc = spawn('rec', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  proc.stderr?.on('data', (chunk: Buffer) => logErr('rec:', chunk.toString().trim()));
-  proc.on('exit', (code: number | null, signal: string | null) => {
-    if (code != null && code !== 0) logErr('rec завершился:', code, signal ?? '');
+  // 🔊 Аудио ответ
+  const speaker = new Speaker({
+    channels: 1,
+    bitDepth: 16,
+    sampleRate: 16000,
   });
-  return { stream: proc.stdout!, stop: () => proc.kill('SIGTERM') };
-}
 
-/** Проверка, что в транскрипте есть wake word (учитываем искажения вроде "Альтрованная"). */
-function transcriptHasWakeWord(transcript: string, wakeWord: string): boolean {
-  const t = transcript.toLowerCase().trim();
-  const stem = wakeWord.toLowerCase().slice(0, 5);
-  return t.includes(wakeWord.toLowerCase()) || t.includes(stem);
-}
-
-/** Убираем wake word и его искажения с начала фразы перед отправкой в ChatGPT. */
-function stripWakeWordFromStart(text: string, wakeWord: string): string {
-  const w = wakeWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const stem = w.slice(0, Math.min(5, w.length));
-  const regex = new RegExp(`^(${w}|${stem}\\S*)[\\s,.:;!?-]*`, 'i');
-  return text.replace(regex, '').trim();
-}
-
-/** Непрерывный режим: поток в кольцо, проверка по таймеру — паузы нет. */
-async function runWakeWordMode(history: Message[]): Promise<void> {
-  const RING_SEC = 6;
-  const CHECK_SEC = 3;
-  const CHECK_MS = 1500;
-  const FIRST_CHECK_MS = 2500;
-  const PHRASE_SEC = Math.max(4, Math.min(12, Number(process.env.WAKE_WORD_PHRASE_SECONDS) || 6));
-
-  const { stream, stop } = startContinuousRec();
-  const ring = new RingBuffer(RING_SEC);
-  let checkBusy = false;
-  let collectingPhrase = false;
-  let phraseChunks: Buffer[] = [];
-  let phraseEndAt = 0;
-  let checkTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const doCheck = async (): Promise<'wake' | null> => {
-    if (checkBusy || collectingPhrase) return null;
-    checkBusy = true;
-    const snap = ring.getLast(CHECK_SEC);
-    if (snap.length < PCM_BYTES_PER_SEC) {
-      checkBusy = false;
-      return null;
+  speaker.on("error", (err: any) => {
+    if (err && err.code !== "EPIPE") {
+      console.error("Speaker error:", err);
     }
-    const energy = pcmRms(snap);
-    if (energy < VAD_THRESHOLD) {
-      checkBusy = false;
-      return null;
-    }
-    const wavPath = join(tmpdir(), `wake-${Date.now()}.wav`);
+  });
+
+  session.on("audio", (event: TransportLayerAudio) => {
+    assistantSpeaking = true;
+    const audio = Buffer.from(new Uint8Array(event.data));
     try {
-      pcmToWav(snap, wavPath);
-      await debugPlayWav(wavPath, 'wake');
-      const text = await transcribe(wavPath);
-      const t = text.toLowerCase().trim();
-      log('wake-check:', JSON.stringify({ energy, text: t }));
-      if (!t) return null;
-      if (transcriptHasWakeWord(text, WAKE_WORD)) return 'wake';
-    } catch {
-      /* ignore */
-    } finally {
-      try { unlinkSync(wavPath); } catch { /* ignore */ }
-      checkBusy = false;
-    }
-    return null;
-  };
-
-  const processPhrase = async (pcm: Buffer): Promise<void> => {
-    const wavPath = join(tmpdir(), `phrase-${Date.now()}.wav`);
-    try {
-      pcmToWav(pcm, wavPath);
-      await debugPlayWav(wavPath, 'phrase');
-      let userText = await transcribe(wavPath);
-      userText = (userText ?? '').trim();
-      userText = stripWakeWordFromStart(userText, WAKE_WORD) || userText;
-      if (!userText || userText.length < 2) {
-        log('Не удалось распознать.');
-        return;
-      }
-      log('Вы:', userText);
-      history.push({ role: 'user', content: userText });
-      try {
-        log('Думаю (потоковый ответ)…');
-        const stream = await chatStream(history);
-        let fullReply = '';
-        let sentenceBuffer = '';
-
-        let audioChain = Promise.resolve();
-
-        process.stdout.write(`[${ts()}] Ответ: `);
-
-        const pushSentence = (sentence: string) => {
-          const text = sentence.trim();
-          if (!text) return;
-          const downloadPromise = generateAudio(text);
-          audioChain = audioChain.then(async () => {
-            try {
-              const path = await downloadPromise;
-              if (path) {
-                await playAudioFile(path);
-                try { unlinkSync(path); } catch { /* ignore */ }
-              }
-            } catch (err) {
-              logErr('Ошибка аудио:', err);
-            }
-          });
-        };
-
-        for await (const token of stream) {
-          process.stdout.write(token);
-          fullReply += token;
-          sentenceBuffer += token;
-
-          if (sentenceBuffer.match(/[.?!;](\s|\n)+$/) || sentenceBuffer.match(/\n$/)) {
-            pushSentence(sentenceBuffer);
-            sentenceBuffer = '';
-          }
-        }
-
-        if (sentenceBuffer.trim()) {
-          pushSentence(sentenceBuffer);
-        }
-
-        console.log(); // newline
-
-        await audioChain;
-
-        history.push({ role: 'assistant', content: fullReply.trim() });
-      } catch (err) {
-        logErr('Ошибка:', err);
-        history.pop();
-        console.log();
-      }
-    } finally {
-      try { unlinkSync(wavPath); } catch { /* ignore */ }
-    }
-  };
-
-  const schedule = (delay = CHECK_MS) => {
-    checkTimer = setTimeout(async () => {
-      const r = await doCheck();
-      if (r === 'wake') {
-        collectingPhrase = true;
-        phraseChunks = [ring.getLast(RING_SEC)];
-        phraseEndAt = Date.now() + PHRASE_SEC * 1000;
-        log('Wake word! Говорите…');
-      }
-      schedule();
-    }, delay);
-  };
-
-  stream.on('data', (chunk: Buffer) => {
-    ring.push(chunk);
-    if (collectingPhrase) {
-      phraseChunks.push(chunk);
-      if (Date.now() >= phraseEndAt) {
-        collectingPhrase = false;
-        const full = Buffer.concat(phraseChunks);
-        phraseChunks = [];
-        processPhrase(full).then(() => {
-          log('');
-          log(`Слушаю «${WAKE_WORD}»…`);
-        }).catch(() => {
-          log('');
-          log(`Слушаю «${WAKE_WORD}»…`);
-        });
+      speaker.write(audio);
+    } catch (err: any) {
+      if (!err || err.code !== "EPIPE") {
+        console.error("Speaker write error:", err);
       }
     }
   });
 
-  stream.on('error', (e: Error) => logErr('Микрофон:', e));
-
-  log(`Слушаю «${WAKE_WORD}» (непрерывно).`);
-  log('');
-
-  schedule(FIRST_CHECK_MS);
-
-  await new Promise<void>((resolve) => {
-    stream.on('close', resolve);
-  }).finally(() => {
-    if (checkTimer) clearTimeout(checkTimer);
+  session.on("audio_stopped", () => {
+    assistantSpeaking = false;
   });
-}
 
-async function main(): Promise<void> {
-  ensureEnv();
-  log('Голосовой помощник');
-  log('Скажите «' + WAKE_WORD + '» и команду.');
-  log('');
+  const shutdown = () => {
+    mic.stop();
+    porcupine.release();
+    (speaker as any).end?.();
+    session.close();
+    process.exit(0);
+  };
 
-  await runWakeWordMode([]);
-  log('До свидания.');
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+
+  mic.start();
 }
 
 main();
