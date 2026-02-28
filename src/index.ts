@@ -4,9 +4,9 @@ import {
   type TransportLayerAudio,
 } from "@openai/agents/realtime";
 import { Porcupine } from "@picovoice/porcupine-node";
-import record from "node-record-lpcm16";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { platform } from "node:os";
+import type { Readable } from "node:stream";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -15,24 +15,71 @@ const SAMPLE_RATE = 24000;
 const CHANNELS = 1;
 const INPUT_SAMPLE_RATE = 16000;
 
-// Защита: node-record-lpcm16 эмитит 'error' (строкой) на stdout stream при exit!=0.
-// Если по какой-то причине listener не успел повеситься — не валим весь процесс.
-process.on("uncaughtException", (err: any) => {
-  if (
-    err?.code === "ERR_UNHANDLED_ERROR" &&
-    typeof err?.context === "string" &&
-    (err.context.includes("arecord has exited") ||
-      err.context.includes("sox has exited") ||
-      err.context.includes("rec has exited"))
-  ) {
-    console.error("Recorder crashed:", err.context.trim());
-    console.error(
-      "Tip: set AUDIO_DEVICE (e.g. plughw:1,0) or run `arecord -l` to list devices.",
-    );
-    return;
+/** Нативный микрофон: spawn arecord (Linux) или sox (macOS), stdout = PCM s16le 16kHz mono */
+function createNativeMic(): {
+  stream: Readable;
+  stop: () => void;
+} {
+  const isLinux = platform() === "linux";
+  const device = process.env.AUDIO_DEVICE;
+
+  const cmd = isLinux ? "arecord" : "sox";
+  const args: string[] = isLinux
+    ? [
+        "-q",
+        "-r", String(INPUT_SAMPLE_RATE),
+        "-c", "1",
+        "-t", "raw",
+        "-f", "S16_LE",
+        "-",
+      ]
+    : [
+        "-d",
+        "--no-show-progress",
+        "--rate", String(INPUT_SAMPLE_RATE),
+        "--channels", "1",
+        "--encoding", "signed-integer",
+        "--bits", "16",
+        "--type", "raw",
+        "-",
+      ];
+
+  if (isLinux && device) {
+    args.unshift("-D", device);
   }
-  throw err;
-});
+
+  const spawnOpts: { stdio: ("ignore" | "pipe")[]; env?: NodeJS.ProcessEnv } = {
+    stdio: ["ignore", "pipe", "pipe"],
+  };
+  if (!isLinux && device) {
+    spawnOpts.env = { ...process.env, AUDIODEV: device };
+  }
+
+  const cp: ChildProcess = spawn(cmd, args, spawnOpts);
+  const stream = cp.stdout!;
+
+  cp.stderr?.on("data", (d: Buffer) => {
+    const msg = d.toString().trim();
+    if (msg) console.error(`${cmd} stderr:`, msg);
+  });
+  cp.on("error", (err: Error) => {
+    console.error(`Mic (${cmd}) spawn error:`, err.message);
+  });
+  cp.on("close", (code, signal) => {
+    if (code != null && code !== 0) {
+      console.error(
+        `Mic (${cmd}) exited with code ${code}. Tip: run \`arecord -l\` and set AUDIO_DEVICE (e.g. plughw:1,0) if needed.`,
+      );
+    }
+  });
+
+  return {
+    stream,
+    stop: () => {
+      if (cp.pid != null) cp.kill();
+    },
+  };
+}
 
 /** Команда для воспроизведения raw PCM s16le: Linux = pw-play, macOS = sox play */
 function getPlayerCommand(): { cmd: string; args: string[] } {
@@ -171,32 +218,8 @@ async function main() {
     return rms >= minRms;
   };
 
-  // 🎤 Микрофон (на Linux используем arecord/ALSA, чтобы не зависеть от sox)
-  const micOptions: Record<string, unknown> = {
-    sampleRate: INPUT_SAMPLE_RATE,
-    channels: 1,
-    audioType: "raw",
-  };
-  if (platform() === "linux") {
-    micOptions.recorder = "arecord";
-    if (process.env.AUDIO_DEVICE) {
-      micOptions.device = process.env.AUDIO_DEVICE;
-    }
-  }
-  const mic = record.record(micOptions);
-  
-  const micStream = mic.stream();
-
-  // Важно: error может прилететь сюда (иначе Node падает с Unhandled 'error' event)
-  micStream.on("error", (err: any) => {
-    console.error("Mic stream error:", err?.message ?? String(err));
-    console.error(
-      "Tip: on Linux run `arecord -l` and set AUDIO_DEVICE (e.g. plughw:1,0) if needed.",
-    );
-  });
-  (mic as any).on?.("error", (err: any) => {
-    console.error("Mic error:", err?.message ?? String(err));
-  });
+  // 🎤 Микрофон: нативный spawn arecord (Linux) / sox (macOS), без node-record-lpcm16
+  const { stream: micStream, stop: stopMic } = createNativeMic();
 
   micStream.on("data", (chunk: Buffer) => {
     wakeBuffer = Buffer.concat([wakeBuffer, chunk]);
@@ -306,7 +329,7 @@ async function main() {
   });
 
   const shutdown = () => {
-    mic.stop();
+    stopMic();
     porcupine.release();
     if (player && !player.killed) {
       player.kill();
@@ -317,8 +340,6 @@ async function main() {
 
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
-
-  mic.start();
 }
 
 main();
