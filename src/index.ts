@@ -36,6 +36,7 @@ function getPlayerCommand(): { cmd: string; args: string[] } {
       "--rate", String(SAMPLE_RATE),
       "--channels", String(CHANNELS),
       "--format", "s16",
+      "-", // читать PCM из stdin
     ],
   };
 }
@@ -150,13 +151,20 @@ async function main() {
     return rms >= minRms;
   };
 
-  // 🎤 Микрофон
-  const mic = record.record({
+  // 🎤 Микрофон (на Linux используем arecord/ALSA, чтобы не зависеть от sox)
+  const micOptions: Record<string, unknown> = {
     sampleRate: 16000,
     channels: 1,
     audioType: "raw",
-  });
+  };
+  if (platform() === "linux") {
+    micOptions.recorder = "arecord";
+  }
+  const mic = record.record(micOptions);
 
+  mic.stream().on("error", (err: Error) => {
+    console.error("Mic stream error:", err.message);
+  });
   mic.stream().on("data", (chunk: Buffer) => {
     wakeBuffer = Buffer.concat([wakeBuffer, chunk]);
     while (wakeBuffer.length >= frameBytes) {
