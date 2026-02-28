@@ -339,6 +339,17 @@ async function main() {
     }
   });
 
+  // 📜 Лог финальной распознанной фразы пользователя
+  session.on("transport_event", (evt: any) => {
+    if (
+      evt &&
+      evt.type === "conversation.item.input_audio_transcription.completed" &&
+      typeof (evt as any).transcript === "string"
+    ) {
+      console.log(`User transcript: ${(evt as any).transcript}`);
+    }
+  });
+
   session.on("audio_stopped", () => {
     assistantSpeaking = false;
     const currentPlayer = player;
