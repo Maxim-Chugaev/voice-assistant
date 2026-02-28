@@ -81,7 +81,7 @@ function createNativeMic(): {
   };
 }
 
-/** Команда для воспроизведения raw PCM s16le: Linux = pw-play, macOS = sox play */
+/** Команда для воспроизведения raw PCM s16le: Linux = pw-play (raw), macOS = sox play */
 function getPlayerCommand(): { cmd: string; args: string[] } {
   if (platform() === "darwin") {
     return {
@@ -100,6 +100,7 @@ function getPlayerCommand(): { cmd: string; args: string[] } {
   return {
     cmd: "pw-play",
     args: [
+      "--raw",
       "--rate", String(SAMPLE_RATE),
       "--channels", String(CHANNELS),
       "--format", "s16",
