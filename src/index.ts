@@ -274,7 +274,7 @@ async function main() {
   });
 
   // 🔊 Аудио ответ через внешний плеер (pw-play на Linux, sox play на macOS)
-  let player = spawnPlayer();
+  let player: ReturnType<typeof spawn> | null = spawnPlayer();
 
   const beepDurationMs = Number(process.env.BEEP_DURATION_MS ?? "150");
   const beepFreq = Number(process.env.BEEP_FREQ ?? "880");
@@ -313,7 +313,7 @@ async function main() {
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
     const chunk = Buffer.from(new Uint8Array(event.data));
-    if (!player || player.killed) {
+    if (!player || player.killed || player.stdin?.destroyed) {
       player = spawnPlayer();
     }
     if (player.stdin?.writable) {
@@ -327,6 +327,15 @@ async function main() {
 
   session.on("audio_stopped", () => {
     assistantSpeaking = false;
+    // Завершаем текущий плеер, чтобы он допроиграл буфер и вышел.
+    if (player && player.stdin && !player.stdin.destroyed) {
+      try {
+        player.stdin.end();
+      } catch {
+        // ignore
+      }
+    }
+    player = null;
   });
 
   const shutdown = () => {
