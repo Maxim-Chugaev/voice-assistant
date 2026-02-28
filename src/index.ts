@@ -3,151 +3,32 @@ import {
   RealtimeSession,
   type TransportLayerAudio,
 } from "@openai/agents/realtime";
-import { Porcupine } from "@picovoice/porcupine-node";
-import { spawn, type ChildProcess } from "node:child_process";
-import { platform } from "node:os";
-import type { Readable } from "node:stream";
-import dotenv from "dotenv";
+import { config, requireEnv } from "./config.js";
+import { createMic } from "./audio/mic.js";
+import {
+  spawnPlayer,
+  createBeepBuffer,
+  playBeep as playBeepSound,
+  type ChildProcessWithStdin,
+} from "./audio/player.js";
+import { initWakeWord } from "./wakeword.js";
 
-dotenv.config();
-
-const SAMPLE_RATE = 24000;
-const CHANNELS = 1;
-const INPUT_SAMPLE_RATE = 16000;
-
-/** Нативный микрофон: spawn arecord (Linux) или sox (macOS), stdout = PCM s16le 16kHz mono */
-function createNativeMic(): {
-  stream: Readable;
-  stop: () => void;
-} {
-  const isLinux = platform() === "linux";
-  const device = process.env.AUDIO_DEVICE;
-
-  const cmd = isLinux ? "arecord" : "sox";
-  const args: string[] = isLinux
-    ? [
-        "-q",
-        "-r", String(INPUT_SAMPLE_RATE),
-        "-c", "1",
-        "-t", "raw",
-        "-f", "S16_LE",
-        "-",
-      ]
-    : [
-        "-d",
-        "--no-show-progress",
-        "--rate", String(INPUT_SAMPLE_RATE),
-        "--channels", "1",
-        "--encoding", "signed-integer",
-        "--bits", "16",
-        "--type", "raw",
-        "-",
-      ];
-
-  if (isLinux && device) {
-    args.unshift("-D", device);
+/** Порог RMS: выше — считаем, что в чанке есть речь (простой VAD) */
+function hasSpeechInChunk(pcm: Buffer, minRms: number): boolean {
+  if (pcm.length < 2) return false;
+  let sum = 0;
+  const samples = pcm.length >> 1;
+  for (let i = 0; i < pcm.length; i += 2) {
+    const s = pcm.readInt16LE(i);
+    sum += s * s;
   }
-
-  const spawnOpts: { stdio: ("ignore" | "pipe")[]; env?: NodeJS.ProcessEnv } = {
-    stdio: ["ignore", "pipe", "pipe"],
-  };
-  if (!isLinux && device) {
-    spawnOpts.env = { ...process.env, AUDIODEV: device };
-  }
-
-  const cp: ChildProcess = spawn(cmd, args, spawnOpts);
-  const stream = cp.stdout!;
-
-  cp.stderr?.on("data", (d: Buffer) => {
-    const msg = d.toString().trim();
-    if (msg) console.error(`${cmd} stderr:`, msg);
-  });
-  cp.on("error", (err: Error) => {
-    console.error(`Mic (${cmd}) spawn error:`, err.message);
-  });
-  cp.on("close", (code, signal) => {
-    if (code != null && code !== 0) {
-      console.error(
-        `Mic (${cmd}) exited with code ${code}. Tip: run \`arecord -l\` and set AUDIO_DEVICE (e.g. plughw:1,0) if needed.`,
-      );
-    }
-  });
-
-  return {
-    stream,
-    stop: () => {
-      if (cp.pid != null) cp.kill();
-    },
-  };
+  const rms = Math.sqrt(sum / Math.max(samples, 1));
+  return rms >= minRms;
 }
-
-/** Команда для воспроизведения raw PCM s16le: Linux = pw-play (raw), macOS = sox play */
-function getPlayerCommand(): { cmd: string; args: string[] } {
-  if (platform() === "darwin") {
-    return {
-      cmd: "play",
-      args: [
-        "-q",
-        "-t", "raw",
-        "-r", String(SAMPLE_RATE),
-        "-e", "signed-integer",
-        "-b", "16",
-        "-c", String(CHANNELS),
-        "-",
-      ],
-    };
-  }
-  return {
-    cmd: "pw-play",
-    args: [
-      "--raw",
-      "--rate", String(SAMPLE_RATE),
-      "--channels", String(CHANNELS),
-      "--format", "s16",
-      "-", // читать PCM из stdin
-    ],
-  };
-}
-
-function spawnPlayer(
-  onStdinError?: (err: NodeJS.ErrnoException) => void,
-): ReturnType<typeof spawn> {
-  const { cmd, args } = getPlayerCommand();
-  const proc = spawn(cmd, args, {
-    stdio: ["pipe", "ignore", "pipe"],
-  });
-  proc.stderr?.on("data", (d: Buffer) => {
-    const msg = d.toString().trim();
-    if (msg) console.error(`${cmd} stderr:`, msg);
-  });
-  proc.on("error", (err: Error) => {
-    console.error(`Player (${cmd}) error:`, err.message);
-  });
-  proc.stdin?.on("error", (err: NodeJS.ErrnoException) => {
-    if (err?.code === "EPIPE") {
-      onStdinError?.(err);
-      return;
-    }
-    console.error(`Player (${cmd}) stdin error:`, err.message);
-  });
-  return proc;
-}
-
 
 async function main() {
-  const porcupineAccessKey = process.env.PORCUPINE_ACCESS_KEY;
-  const porcupineKeywordPath = process.env.PORCUPINE_KEYWORD_PATH;
-  const preferredBuiltinWakeWord = (
-    process.env.PORCUPINE_BUILTIN_KEYWORD ?? "jarvis"
-  ).toLowerCase();
-  const wakeWindowMs = Number(process.env.WAKE_WINDOW_MS ?? "8000");
-  const gateSilenceMs = Number(process.env.GATE_SILENCE_MS ?? "1200");
-  const minRms = Number(process.env.MIN_RMS ?? "200");
-  const wakeDebounceMs = Number(process.env.WAKE_DEBOUNCE_MS ?? "1500");
-
-  if (!porcupineAccessKey) {
-    throw new Error("Set PORCUPINE_ACCESS_KEY in .env");
-  }
+  const openaiKey = requireEnv("OPENAI_API_KEY", config.openai.apiKey);
+  const porcupineKey = requireEnv("PORCUPINE_ACCESS_KEY", config.porcupine.accessKey);
 
   const agent = new RealtimeAgent({
     name: "Assistant",
@@ -162,9 +43,7 @@ async function main() {
       audio: {
         input: {
           format: "pcm16",
-          transcription: {
-            model: "gpt-4o-mini-transcribe",
-          },
+          transcription: { model: "gpt-4o-mini-transcribe" },
           turnDetection: {
             type: "semantic_vad",
             eagerness: "medium",
@@ -172,91 +51,75 @@ async function main() {
             interruptResponse: true,
           },
         },
-        output: {
-          format: "pcm16",
-        },
+        output: { format: "pcm16" },
       },
     },
   });
 
-  await session.connect({
-    apiKey: process.env.OPENAI_API_KEY!,
-  });
-
+  await session.connect({ apiKey: openaiKey });
   console.log("Connected. Say wake-word to activate…");
 
-  let porcupine: any = null;
-  let activeWakeWordLabel = "";
+  const { engine: wakeEngine, label: wakeLabel } = initWakeWord(
+    porcupineKey,
+    config.porcupine.keywordPath,
+    config.porcupine.builtinKeyword,
+  );
+  console.log(`Wake-word active: ${wakeLabel}`);
 
-  if (porcupineKeywordPath) {
-    porcupine = new Porcupine(
-      porcupineAccessKey,
-      [porcupineKeywordPath],
-      [0.65],
-    );
-    activeWakeWordLabel = `custom(${porcupineKeywordPath})`;
-  } else {
-    const keyword = preferredBuiltinWakeWord || "jarvis";
-    porcupine = new Porcupine(
-      porcupineAccessKey,
-      [keyword],
-      [0.65],
-    );
-    activeWakeWordLabel = keyword;
-  }
-  console.log(`Wake-word active: ${activeWakeWordLabel}`);
-  const frameLength = porcupine.frameLength;
-  const frameBytes = frameLength * 2;
+  const frameBytes = wakeEngine.frameBytes;
+  const frameLength = wakeEngine.frameLength;
+
+  const { windowMs, silenceMs, minRms, debounceMs } = config.gate;
+  const { durationMs: beepDurationMs, freqHz: beepFreqHz } = config.beep;
 
   let assistantSpeaking = false;
   let gateOpenUntil = 0;
   let lastSpeechAt = 0;
-  let lastWakeDetectedAt = 0;
+  let lastWakeAt = 0;
   let hasUserSpeechInGate = false;
   let beepPlaying = false;
   let wakeBuffer = Buffer.alloc(0);
 
-  const isSpeechChunk = (pcm16: Buffer): boolean => {
-    if (pcm16.length < 2) return false;
-    let sum = 0;
-    const samples = pcm16.length >> 1;
-    for (let i = 0; i < pcm16.length; i += 2) {
-      const s = pcm16.readInt16LE(i);
-      sum += s * s;
-    }
-    const rms = Math.sqrt(sum / Math.max(samples, 1));
-    return rms >= minRms;
+  const { stream: micStream, stop: stopMic } = createMic({
+    device: config.audioDevice,
+  });
+
+  const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
+  const playBeep = () => {
+    if (beepPlaying) return;
+    beepPlaying = true;
+    playBeepSound(beepBuffer, beepDurationMs, () => {
+      beepPlaying = false;
+    });
   };
 
-  // 🎤 Микрофон: нативный spawn arecord (Linux) / sox (macOS), без node-record-lpcm16
-  const { stream: micStream, stop: stopMic } = createNativeMic();
+  let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
+    if (err?.code === "EPIPE") player = null;
+  });
 
   micStream.on("data", (chunk: Buffer) => {
     wakeBuffer = Buffer.concat([wakeBuffer, chunk]);
     while (wakeBuffer.length >= frameBytes) {
       const frame = wakeBuffer.subarray(0, frameBytes);
       wakeBuffer = wakeBuffer.subarray(frameBytes);
-
       const pcmFrame = new Int16Array(
         frame.buffer,
         frame.byteOffset,
         frameLength,
       );
-      const keywordIndex = porcupine.process(pcmFrame);
+      const keywordIndex = wakeEngine.process(pcmFrame);
+
       if (keywordIndex >= 0) {
         const now = Date.now();
-        const inDebounce = now - lastWakeDetectedAt < wakeDebounceMs;
-        const gateAlreadyOpen = now <= gateOpenUntil && !assistantSpeaking;
-        if (inDebounce || gateAlreadyOpen) {
-          continue;
-        }
-        lastWakeDetectedAt = now;
+        if (now - lastWakeAt < debounceMs) continue;
+        if (now <= gateOpenUntil && !assistantSpeaking) continue;
 
+        lastWakeAt = now;
         if (assistantSpeaking) {
-          (session as any).interrupt?.();
+          (session as { interrupt?: () => void }).interrupt?.();
           assistantSpeaking = false;
         }
-        gateOpenUntil = now + wakeWindowMs;
+        gateOpenUntil = now + windowMs;
         hasUserSpeechInGate = false;
         lastSpeechAt = now;
         console.log("Wake word detected");
@@ -267,11 +130,10 @@ async function main() {
     if (assistantSpeaking || beepPlaying) return;
     if (Date.now() > gateOpenUntil) return;
 
-    const hasSpeech = isSpeechChunk(chunk);
-    if (hasSpeech) {
+    if (hasSpeechInChunk(chunk, minRms)) {
       hasUserSpeechInGate = true;
       lastSpeechAt = Date.now();
-    } else if (hasUserSpeechInGate && Date.now() - lastSpeechAt > gateSilenceMs) {
+    } else if (hasUserSpeechInGate && Date.now() - lastSpeechAt > silenceMs) {
       gateOpenUntil = 0;
     }
 
@@ -281,45 +143,6 @@ async function main() {
     ) as ArrayBuffer;
     session.sendAudio(ab);
   });
-
-  // 🔊 Аудио ответ через внешний плеер (pw-play на Linux, sox play на macOS)
-  let player: ReturnType<typeof spawn> | null = spawnPlayer((err) => {
-    if (err?.code === "EPIPE") player = null;
-  });
-
-  const beepDurationMs = Number(process.env.BEEP_DURATION_MS ?? "150");
-  const beepFreq = Number(process.env.BEEP_FREQ ?? "880");
-  const beepBuffer = (() => {
-    const samples = Math.max(
-      1,
-      Math.floor((SAMPLE_RATE * beepDurationMs) / 1000),
-    );
-    const arr = new Int16Array(samples);
-    const amplitude = 0.25 * 0x7fff;
-    for (let i = 0; i < samples; i++) {
-      const t = i / SAMPLE_RATE;
-      arr[i] = Math.round(
-        amplitude * Math.sin(2 * Math.PI * beepFreq * t),
-      );
-    }
-    return Buffer.from(arr.buffer);
-  })();
-
-  const playBeep = () => {
-    if (beepPlaying) return;
-    beepPlaying = true;
-    const beepProc = spawnPlayer();
-    beepProc.stdin?.once("error", () => {});
-    beepProc.stdin?.write(beepBuffer, () => {
-      beepProc.stdin?.end();
-    });
-    beepProc.on("close", () => {
-      beepPlaying = false;
-    });
-    setTimeout(() => {
-      beepPlaying = false;
-    }, beepDurationMs + 100);
-  };
 
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
@@ -332,38 +155,35 @@ async function main() {
     if (player?.stdin?.writable) {
       try {
         player.stdin.write(chunk);
-      } catch (err: any) {
-        if (err?.code !== "EPIPE") console.error("Player write error:", err?.message);
+      } catch (err: unknown) {
+        const e = err as { code?: string; message?: string };
+        if (e?.code !== "EPIPE") console.error("Player write error:", e?.message);
         player = null;
       }
     }
   });
 
-  // 📜 Лог финальной распознанной фразы пользователя
-  session.on("transport_event", (evt: any) => {
+  session.on("transport_event", (evt: { type?: string; transcript?: string }) => {
     if (
-      evt &&
-      evt.type === "conversation.item.input_audio_transcription.completed" &&
-      typeof (evt as any).transcript === "string"
+      evt?.type === "conversation.item.input_audio_transcription.completed" &&
+      typeof evt.transcript === "string"
     ) {
-      console.log(`User transcript: ${(evt as any).transcript}`);
+      console.log(`User transcript: ${evt.transcript}`);
     }
   });
 
   session.on("audio_stopped", () => {
     assistantSpeaking = false;
-    const currentPlayer = player;
-    // Задержка: даём последним аудио-чанкам время записаться, затем end() для flush.
-    // Одновременно создаём новый плеер, чтобы первый чанк следующего ответа пошёл без задержки spawn.
+    const current = player;
     setTimeout(() => {
-      if (currentPlayer?.stdin && !currentPlayer.stdin.destroyed) {
+      if (current?.stdin && !current.stdin.destroyed) {
         try {
-          currentPlayer.stdin.end();
+          current.stdin.end();
         } catch {
           // ignore
         }
       }
-      if (player === currentPlayer) {
+      if (player === current) {
         player = spawnPlayer((err) => {
           if (err?.code === "EPIPE") player = null;
         });
@@ -373,10 +193,8 @@ async function main() {
 
   const shutdown = () => {
     stopMic();
-    porcupine.release();
-    if (player && !player.killed) {
-      player.kill();
-    }
+    wakeEngine.release();
+    if (player && !player.killed) player.kill();
     session.close();
     process.exit(0);
   };
