@@ -7,6 +7,8 @@ import { Porcupine } from "@picovoice/porcupine-node";
 import { spawn, type ChildProcess } from "node:child_process";
 import { platform } from "node:os";
 import type { Readable } from "node:stream";
+import fs from "node:fs";
+import path from "node:path";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -14,6 +16,15 @@ dotenv.config();
 const SAMPLE_RATE = 24000;
 const CHANNELS = 1;
 const INPUT_SAMPLE_RATE = 16000;
+const TMP_DIR = path.join(process.cwd(), "tmp");
+
+let tmpDirReady = false;
+const ensureTmpDir = () => {
+  if (!tmpDirReady) {
+    fs.mkdirSync(TMP_DIR, { recursive: true });
+    tmpDirReady = true;
+  }
+};
 
 /** Нативный микрофон: spawn arecord (Linux) или sox (macOS), stdout = PCM s16le 16kHz mono */
 function createNativeMic(): {
@@ -215,6 +226,15 @@ async function main() {
   let hasUserSpeechInGate = false;
   let beepPlaying = false;
   let wakeBuffer = Buffer.alloc(0);
+  let micFile: fs.WriteStream | null = null;
+  let micFileIndex = 0;
+
+  const closeMicFile = () => {
+    if (micFile) {
+      micFile.end();
+      micFile = null;
+    }
+  };
 
   const isSpeechChunk = (pcm16: Buffer): boolean => {
     if (pcm16.length < 2) return false;
@@ -261,11 +281,26 @@ async function main() {
         lastSpeechAt = now;
         console.log("Wake word detected");
         playBeep();
+        try {
+          ensureTmpDir();
+          closeMicFile();
+          const filename = `mic_${new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")}_${micFileIndex++}.raw`;
+          const fullPath = path.join(TMP_DIR, filename);
+          micFile = fs.createWriteStream(fullPath);
+          console.log(`Mic capture file: tmp/${filename}`);
+        } catch (err: any) {
+          console.error("Mic capture open error:", err?.message ?? err);
+        }
       }
     }
 
     if (assistantSpeaking || beepPlaying) return;
-    if (Date.now() > gateOpenUntil) return;
+    if (Date.now() > gateOpenUntil) {
+      closeMicFile();
+      return;
+    }
 
     const hasSpeech = isSpeechChunk(chunk);
     if (hasSpeech) {
@@ -273,6 +308,11 @@ async function main() {
       lastSpeechAt = Date.now();
     } else if (hasUserSpeechInGate && Date.now() - lastSpeechAt > gateSilenceMs) {
       gateOpenUntil = 0;
+      closeMicFile();
+    }
+
+    if (micFile && !micFile.destroyed) {
+      micFile.write(chunk);
     }
 
     const ab = chunk.buffer.slice(
@@ -373,6 +413,7 @@ async function main() {
 
   const shutdown = () => {
     stopMic();
+    closeMicFile();
     porcupine.release();
     if (player && !player.killed) {
       player.kill();
