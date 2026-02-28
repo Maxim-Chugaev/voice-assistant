@@ -155,17 +155,30 @@ async function main() {
   const micOptions: Record<string, unknown> = {
     sampleRate: 16000,
     channels: 1,
+    device: "hw:2,0",
     audioType: "raw",
   };
   if (platform() === "linux") {
     micOptions.recorder = "arecord";
+    if (process.env.AUDIO_DEVICE) {
+      micOptions.device = process.env.AUDIO_DEVICE;
+    }
   }
   const mic = record.record(micOptions);
+  const micStream = mic.stream();
 
-  mic.stream().on("error", (err: Error) => {
-    console.error("Mic stream error:", err.message);
+  // Важно: error может прилететь сюда (иначе Node падает с Unhandled 'error' event)
+  micStream.on("error", (err: any) => {
+    console.error("Mic stream error:", err?.message ?? String(err));
+    console.error(
+      "Tip: on Linux run `arecord -l` and set AUDIO_DEVICE (e.g. plughw:1,0) if needed.",
+    );
   });
-  mic.stream().on("data", (chunk: Buffer) => {
+  (mic as any).on?.("error", (err: any) => {
+    console.error("Mic error:", err?.message ?? String(err));
+  });
+
+  micStream.on("data", (chunk: Buffer) => {
     wakeBuffer = Buffer.concat([wakeBuffer, chunk]);
     while (wakeBuffer.length >= frameBytes) {
       const frame = wakeBuffer.subarray(0, frameBytes);
