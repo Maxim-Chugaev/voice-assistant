@@ -18,7 +18,9 @@
 - **Node.js** 18+
 - **OpenAI API key** — для Realtime API (`gpt-realtime`).
 - **Picovoice Porcupine AccessKey** — для локального wake word.
-- Рабочий микрофон и аудиовыход (на macOS и Linux доп. системные пакеты обычно не нужны — запись идёт через `node-record-lpcm16`, вывод через `speaker`).
+- **Воспроизведение звука** (одно из):
+  - **Linux**: PipeWire — `pw-play` (обычно уже есть при использовании PipeWire).
+  - **macOS**: SoX — `brew install sox` (команда `play`).
 
 ## Установка
 
@@ -67,7 +69,7 @@ yarn audio-test
    - все аудиочанки стримятся в `session.sendAudio(...)`;
    - локальный RMS‑VAD (`MIN_RMS`) следит за наличием речи и может закрыть окно раньше после `GATE_SILENCE_MS` тишины.
 5. Realtime‑модель сама детектит конец фразы (`semantic_vad`) и начинает говорить.
-6. Событие `session.on("audio")` отдаёт PCM‑чанки, которые воспроизводятся через `speaker` (24 kHz).
+6. Событие `session.on("audio")` отдаёт PCM‑чанки, которые передаются в внешний плеер: на Linux — `pw-play`, на macOS — `sox play` (24 kHz, mono, s16le).
 
 ## Использование
 
@@ -109,14 +111,15 @@ yarn audio-test
   - убедитесь, что после `Wake word detected` вы действительно говорите в течение окна (`WAKE_WINDOW_MS`);
   - проверьте, что ключ `OPENAI_API_KEY` активен и имеет доступ к `gpt-realtime`.
 
-- **Логи забиты предупреждениями CoreAudio/mpg123**:
-  - в текущей версии проекта шумный warning про `buffer underflow` в аудио‑коллбэке уже фильтруется и не мешает.
+- **Нет звука / ошибка при воспроизведении**:
+  - Linux: убедитесь, что установлен PipeWire и в PATH есть `pw-play`.
+  - macOS: установите SoX — `brew install sox` (нужна команда `play`).
 
 ## Структура проекта
 
 - `src/index.ts` — основной ассистент: Porcupine, wake word, gate‑окно, локальный VAD, RealtimeSession, вывод звука.
 - `src/audio-test.ts` — минимальный тест Porcupine/wake word без подключения к OpenAI.
-- `src/types/external-modules.d.ts` — декларации для внешних модулей без типов (`node-record-lpcm16`, `speaker`, `@picovoice/porcupine-node`).
+- `src/types/external-modules.d.ts` — декларации для внешних модулей без типов (`node-record-lpcm16`, `@picovoice/porcupine-node`).
 
 ## Лицензия
 

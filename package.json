@@ -26,7 +26,6 @@
     "@picovoice/porcupine-node": "^3.0.5",
     "dotenv": "^16.4.5",
     "node-record-lpcm16": "^1.0.1",
-    "speaker": "^0.5.5",
     "zod": "^4.0.0"
   },
   "devDependencies": {

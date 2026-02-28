@@ -5,10 +5,55 @@ import {
 } from "@openai/agents/realtime";
 import { Porcupine } from "@picovoice/porcupine-node";
 import record from "node-record-lpcm16";
-import Speaker from "speaker";
+import { spawn } from "node:child_process";
+import { platform } from "node:os";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+const SAMPLE_RATE = 24000;
+const CHANNELS = 1;
+
+/** Команда для воспроизведения raw PCM s16le: Linux = pw-play, macOS = sox play */
+function getPlayerCommand(): { cmd: string; args: string[] } {
+  if (platform() === "darwin") {
+    return {
+      cmd: "play",
+      args: [
+        "-q",
+        "-t", "raw",
+        "-r", String(SAMPLE_RATE),
+        "-e", "signed-integer",
+        "-b", "16",
+        "-c", String(CHANNELS),
+        "-",
+      ],
+    };
+  }
+  return {
+    cmd: "pw-play",
+    args: [
+      "--rate", String(SAMPLE_RATE),
+      "--channels", String(CHANNELS),
+      "--format", "s16",
+    ],
+  };
+}
+
+function spawnPlayer(): ReturnType<typeof spawn> {
+  const { cmd, args } = getPlayerCommand();
+  const proc = spawn(cmd, args, {
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  proc.stderr?.on("data", (d: Buffer) => {
+    const msg = d.toString().trim();
+    if (msg) console.error(`${cmd} stderr:`, msg);
+  });
+  proc.on("error", (err: Error) => {
+    console.error(`Player (${cmd}) error:`, err.message);
+  });
+  return proc;
+}
 
 
 async function main() {
@@ -184,31 +229,20 @@ async function main() {
     session.sendAudio(ab);
   });
 
-  // 🔊 Аудио ответ
-  const speaker = new Speaker({
-    channels: 1,
-    bitDepth: 16,
-    sampleRate: 24000,
-  });
-
-  speaker.on("error", (err: any) => {
-    if (err && err.code !== "EPIPE") {
-      console.error("Speaker error:", err);
-    }
-  });
+  // 🔊 Аудио ответ через внешний плеер (pw-play на Linux, sox play на macOS)
+  let player = spawnPlayer();
 
   const beepDurationMs = Number(process.env.BEEP_DURATION_MS ?? "150");
   const beepFreq = Number(process.env.BEEP_FREQ ?? "880");
   const beepBuffer = (() => {
-    const sampleRate = 24000;
     const samples = Math.max(
       1,
-      Math.floor((sampleRate * beepDurationMs) / 1000),
+      Math.floor((SAMPLE_RATE * beepDurationMs) / 1000),
     );
     const arr = new Int16Array(samples);
     const amplitude = 0.25 * 0x7fff;
     for (let i = 0; i < samples; i++) {
-      const t = i / sampleRate;
+      const t = i / SAMPLE_RATE;
       arr[i] = Math.round(
         amplitude * Math.sin(2 * Math.PI * beepFreq * t),
       );
@@ -219,27 +253,30 @@ async function main() {
   const playBeep = () => {
     if (beepPlaying) return;
     beepPlaying = true;
-    try {
-      speaker.write(beepBuffer);
-    } catch (err: any) {
-      if (!err || err.code !== "EPIPE") {
-        console.error("Beep write error:", err);
-      }
-    } finally {
-      setTimeout(() => {
-        beepPlaying = false;
-      }, beepDurationMs + 50);
-    }
+    const beepProc = spawnPlayer();
+    beepProc.stdin?.once("error", () => {});
+    beepProc.stdin?.write(beepBuffer, () => {
+      beepProc.stdin?.end();
+    });
+    beepProc.on("close", () => {
+      beepPlaying = false;
+    });
+    setTimeout(() => {
+      beepPlaying = false;
+    }, beepDurationMs + 100);
   };
 
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
-    const audio = Buffer.from(new Uint8Array(event.data));
-    try {
-      speaker.write(audio);
-    } catch (err: any) {
-      if (!err || err.code !== "EPIPE") {
-        console.error("Speaker write error:", err);
+    const chunk = Buffer.from(new Uint8Array(event.data));
+    if (!player || player.killed) {
+      player = spawnPlayer();
+    }
+    if (player.stdin?.writable) {
+      try {
+        player.stdin.write(chunk);
+      } catch (err: any) {
+        console.error("Player write error:", err?.message);
       }
     }
   });
@@ -251,7 +288,9 @@ async function main() {
   const shutdown = () => {
     mic.stop();
     porcupine.release();
-    (speaker as any).end?.();
+    if (player && !player.killed) {
+      player.kill();
+    }
     session.close();
     process.exit(0);
   };
