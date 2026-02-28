@@ -109,7 +109,9 @@ function getPlayerCommand(): { cmd: string; args: string[] } {
   };
 }
 
-function spawnPlayer(): ReturnType<typeof spawn> {
+function spawnPlayer(
+  onStdinError?: (err: NodeJS.ErrnoException) => void,
+): ReturnType<typeof spawn> {
   const { cmd, args } = getPlayerCommand();
   const proc = spawn(cmd, args, {
     stdio: ["pipe", "ignore", "pipe"],
@@ -120,6 +122,13 @@ function spawnPlayer(): ReturnType<typeof spawn> {
   });
   proc.on("error", (err: Error) => {
     console.error(`Player (${cmd}) error:`, err.message);
+  });
+  proc.stdin?.on("error", (err: NodeJS.ErrnoException) => {
+    if (err?.code === "EPIPE") {
+      onStdinError?.(err);
+      return;
+    }
+    console.error(`Player (${cmd}) stdin error:`, err.message);
   });
   return proc;
 }
@@ -274,7 +283,9 @@ async function main() {
   });
 
   // 🔊 Аудио ответ через внешний плеер (pw-play на Linux, sox play на macOS)
-  let player: ReturnType<typeof spawn> | null = spawnPlayer();
+  let player: ReturnType<typeof spawn> | null = spawnPlayer((err) => {
+    if (err?.code === "EPIPE") player = null;
+  });
 
   const beepDurationMs = Number(process.env.BEEP_DURATION_MS ?? "150");
   const beepFreq = Number(process.env.BEEP_FREQ ?? "880");
@@ -314,28 +325,39 @@ async function main() {
     assistantSpeaking = true;
     const chunk = Buffer.from(new Uint8Array(event.data));
     if (!player || player.killed || player.stdin?.destroyed) {
-      player = spawnPlayer();
+      player = spawnPlayer((err) => {
+        if (err?.code === "EPIPE") player = null;
+      });
     }
-    if (player.stdin?.writable) {
+    if (player?.stdin?.writable) {
       try {
         player.stdin.write(chunk);
       } catch (err: any) {
-        console.error("Player write error:", err?.message);
+        if (err?.code !== "EPIPE") console.error("Player write error:", err?.message);
+        player = null;
       }
     }
   });
 
   session.on("audio_stopped", () => {
     assistantSpeaking = false;
-    // Завершаем текущий плеер, чтобы он допроиграл буфер и вышел.
-    if (player && player.stdin && !player.stdin.destroyed) {
-      try {
-        player.stdin.end();
-      } catch {
-        // ignore
+    const currentPlayer = player;
+    // Задержка: даём последним аудио-чанкам время записаться, затем end() для flush.
+    // Одновременно создаём новый плеер, чтобы первый чанк следующего ответа пошёл без задержки spawn.
+    setTimeout(() => {
+      if (currentPlayer?.stdin && !currentPlayer.stdin.destroyed) {
+        try {
+          currentPlayer.stdin.end();
+        } catch {
+          // ignore
+        }
       }
-    }
-    player = null;
+      if (player === currentPlayer) {
+        player = spawnPlayer((err) => {
+          if (err?.code === "EPIPE") player = null;
+        });
+      }
+    }, 150);
   });
 
   const shutdown = () => {
