@@ -118,35 +118,13 @@ async function main() {
     );
     activeWakeWordLabel = `custom(${porcupineKeywordPath})`;
   } else {
-    const candidates = [
-      preferredBuiltinWakeWord,
-      "jarvis",
-      "porcupine",
-      "picovoice",
-      "bumblebee",
-      "grasshopper",
-    ];
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      try {
-        // Porcupine runtime validates supported builtin keywords.
-        porcupine = new Porcupine(
-          porcupineAccessKey,
-          [candidate],
-          [0.65],
-        );
-        activeWakeWordLabel = candidate;
-        break;
-      } catch (err: any) {
-        console.error("Wake word failed:", candidate);
-        console.error(err);
-      }
-    }
-    if (!porcupine) {
-      throw new Error(
-        "No supported builtin wake-word found. Set PORCUPINE_KEYWORD_PATH to your .ppn file.",
-      );
-    }
+    const keyword = preferredBuiltinWakeWord || "jarvis";
+    porcupine = new Porcupine(
+      porcupineAccessKey,
+      [keyword],
+      [0.65],
+    );
+    activeWakeWordLabel = keyword;
   }
   console.log(`Wake-word active: ${activeWakeWordLabel}`);
   const frameLength = porcupine.frameLength;
