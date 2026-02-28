@@ -13,6 +13,26 @@ dotenv.config();
 
 const SAMPLE_RATE = 24000;
 const CHANNELS = 1;
+const INPUT_SAMPLE_RATE = 16000;
+
+// Защита: node-record-lpcm16 эмитит 'error' (строкой) на stdout stream при exit!=0.
+// Если по какой-то причине listener не успел повеситься — не валим весь процесс.
+process.on("uncaughtException", (err: any) => {
+  if (
+    err?.code === "ERR_UNHANDLED_ERROR" &&
+    typeof err?.context === "string" &&
+    (err.context.includes("arecord has exited") ||
+      err.context.includes("sox has exited") ||
+      err.context.includes("rec has exited"))
+  ) {
+    console.error("Recorder crashed:", err.context.trim());
+    console.error(
+      "Tip: set AUDIO_DEVICE (e.g. plughw:1,0) or run `arecord -l` to list devices.",
+    );
+    return;
+  }
+  throw err;
+});
 
 /** Команда для воспроизведения raw PCM s16le: Linux = pw-play, macOS = sox play */
 function getPlayerCommand(): { cmd: string; args: string[] } {
@@ -153,9 +173,8 @@ async function main() {
 
   // 🎤 Микрофон (на Linux используем arecord/ALSA, чтобы не зависеть от sox)
   const micOptions: Record<string, unknown> = {
-    sampleRate: 16000,
+    sampleRate: INPUT_SAMPLE_RATE,
     channels: 1,
-    device: "hw:2,0",
     audioType: "raw",
   };
   if (platform() === "linux") {
@@ -165,6 +184,7 @@ async function main() {
     }
   }
   const mic = record.record(micOptions);
+  
   const micStream = mic.stream();
 
   // Важно: error может прилететь сюда (иначе Node падает с Unhandled 'error' event)
