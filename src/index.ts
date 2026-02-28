@@ -137,8 +137,9 @@ async function main() {
         );
         activeWakeWordLabel = candidate;
         break;
-      } catch {
-        // try next builtin keyword
+      } catch (err: any) {
+        console.error("Wake word failed:", candidate);
+        console.error(err);
       }
     }
     if (!porcupine) {
