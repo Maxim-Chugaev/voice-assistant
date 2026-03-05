@@ -286,15 +286,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"debug@npm:^2.6.8":
-  version: 2.6.9
-  resolution: "debug@npm:2.6.9"
-  dependencies:
-    ms: "npm:2.0.0"
-  checksum: 10c0/121908fb839f7801180b69a7e218a40b5a0b718813b886b7d6bdb82001b931c938e2941d1e4450f33a1b1df1da653f5f7a0440c197f29fbf8a6e9d45ff6ef589
-  languageName: node
-  linkType: hard
-
 "debug@npm:^4.4.0, debug@npm:^4.4.3":
   version: 4.4.3
   resolution: "debug@npm:4.4.3"
@@ -678,13 +669,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ms@npm:2.0.0":
-  version: 2.0.0
-  resolution: "ms@npm:2.0.0"
-  checksum: 10c0/f8fda810b39fd7255bbdc451c46286e549794fcc700dc9cd1d25658bbc4dc2563a5de6fe7c60f798a16a60c6ceb53f033cb353f493f0cf63e5199b702943159d
-  languageName: node
-  linkType: hard
-
 "ms@npm:^2.1.3":
   version: 2.1.3
   resolution: "ms@npm:2.1.3"
@@ -696,15 +680,6 @@ __metadata:
   version: 1.0.0
   resolution: "negotiator@npm:1.0.0"
   checksum: 10c0/4c559dd52669ea48e1914f9d634227c561221dd54734070791f999c52ed0ff36e437b2e07d5c1f6e32909fc625fe46491c16e4a8f0572567d4dd15c3a4fda04b
-  languageName: node
-  linkType: hard
-
-"node-record-lpcm16@npm:^1.0.1":
-  version: 1.0.1
-  resolution: "node-record-lpcm16@npm:1.0.1"
-  dependencies:
-    debug: "npm:^2.6.8"
-  checksum: 10c0/f2c565482582d2c2735ec0fe62ac21c7614058ae7aad58da64dad6b40fb4037f7e26a60ad7f59f43bc7826d932c4a0a5fa7bda2aff52639f855b1952ea22ecd2
   languageName: node
   linkType: hard
 
@@ -1033,7 +1008,6 @@ __metadata:
     "@picovoice/porcupine-node": "npm:^3.0.5"
     "@types/node": "npm:^22.10.0"
     dotenv: "npm:^16.4.5"
-    node-record-lpcm16: "npm:^1.0.1"
     typescript: "npm:^5.7.0"
     zod: "npm:^4.0.0"
   languageName: unknown

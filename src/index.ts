@@ -140,15 +140,8 @@ async function main() {
       }
     }
 
-    if (assistantSpeaking || beepPlaying) return;
-    if (Date.now() > gateOpenUntil) return;
-
-    if (hasSpeechInChunk(chunk, minRms)) {
-      hasUserSpeechInGate = true;
-      lastSpeechAt = Date.now();
-    } else if (hasUserSpeechInGate && Date.now() - lastSpeechAt > silenceMs) {
-      gateOpenUntil = 0;
-    }
+    if (assistantSpeaking) return;
+    if (!gateOpenUntil || Date.now() > gateOpenUntil) return;
 
     const ab = chunk.buffer.slice(
       chunk.byteOffset,
