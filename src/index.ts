@@ -82,17 +82,30 @@ async function main() {
 
   const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
   const outputDevice = config.audioOutputDevice ?? undefined;
-  const playBeep = () => {
-    if (beepPlaying) return;
-    beepPlaying = true;
-    playBeepSound(beepBuffer, beepDurationMs, () => {
-      beepPlaying = false;
-    }, outputDevice);
-  };
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
   }, outputDevice);
+
+  const playBeep = () => {
+    if (beepPlaying) return;
+    beepPlaying = true;
+
+    const done = () => {
+      beepPlaying = false;
+    };
+
+    if (player?.stdin?.writable) {
+      try {
+        player.stdin.write(beepBuffer, done);
+        return;
+      } catch {
+        player = null;
+      }
+    }
+
+    playBeepSound(beepBuffer, beepDurationMs, done, outputDevice);
+  };
 
   let stopMicRef: () => void = () => {};
   let micReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
