@@ -82,6 +82,9 @@ async function main() {
 
   const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
   const outputDevice = config.audioOutputDevice ?? undefined;
+  const silenceBuffer = Buffer.alloc(
+    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 100) / 1000),
+  ); // ~100 мс тишины
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
@@ -89,11 +92,35 @@ async function main() {
 
   const playBeep = () => {
     if (beepPlaying) return;
+    if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
     beepPlaying = true;
-    playBeepSound(beepBuffer, beepDurationMs, () => {
+    try {
+      player.stdin.write(beepBuffer, () => {
+        beepPlaying = false;
+      });
+    } catch {
       beepPlaying = false;
-    }, outputDevice);
+      player = null;
+    }
   };
+
+  let silenceInterval: ReturnType<typeof setInterval> | null = null;
+  const startSilenceLoop = () => {
+    // Постоянный тихий поток нужен только на Linux (Raspberry),
+    // на macOS он даёт заикания, поэтому там не включаем.
+    if (process.platform !== "linux") return;
+    if (silenceInterval != null) return;
+    silenceInterval = setInterval(() => {
+      if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
+      if (assistantSpeaking || beepPlaying) return;
+      try {
+        player.stdin.write(silenceBuffer);
+      } catch {
+        player = null;
+      }
+    }, 100);
+  };
+  startSilenceLoop();
 
   let stopMicRef: () => void = () => {};
   let micReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -194,6 +221,7 @@ async function main() {
 
   const shutdown = () => {
     if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
+    if (silenceInterval != null) clearInterval(silenceInterval);
     stopMicRef();
     wakeEngine.release();
     if (player && !player.killed) player.kill();
