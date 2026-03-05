@@ -78,58 +78,22 @@ async function main() {
   let lastWakeAt = 0;
   let hasUserSpeechInGate = false;
   let beepPlaying = false;
-  let silenceInterval: ReturnType<typeof setInterval> | null = null;
   let wakeBuffer = Buffer.alloc(0);
 
   const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
   const outputDevice = config.audioOutputDevice ?? undefined;
-  const silenceBuffer = Buffer.alloc(
-    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 100) / 1000),
-  ); // ~100 мс тишины
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
   }, outputDevice);
 
   const playBeep = () => {
-    if (assistantSpeaking) return;
     if (beepPlaying) return;
     beepPlaying = true;
-    console.log("playBeep(): called");
-
-    const done = () => {
+    playBeepSound(beepBuffer, beepDurationMs, () => {
       beepPlaying = false;
-      console.log("playBeep(): done");
-    };
-
-    if (player?.stdin?.writable) {
-      try {
-        console.log("playBeep(): writing to existing player stdin");
-        player.stdin.write(beepBuffer, done);
-        return;
-      } catch {
-        console.log("playBeep(): error writing to existing player, falling back");
-        player = null;
-      }
-    }
-
-    console.log("playBeep(): spawning dedicated player");
-    playBeepSound(beepBuffer, beepDurationMs, done, outputDevice);
+    }, outputDevice);
   };
-
-  const startSilenceLoop = () => {
-    if (silenceInterval != null) return;
-    silenceInterval = setInterval(() => {
-      if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
-      if (assistantSpeaking || beepPlaying) return;
-      try {
-        player.stdin.write(silenceBuffer);
-      } catch {
-        player = null;
-      }
-    }, 100);
-  };
-  startSilenceLoop();
 
   let stopMicRef: () => void = () => {};
   let micReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -157,18 +121,11 @@ async function main() {
           assistantSpeaking = false;
         }
 
-        // Сначала только сигнал «услышал»…
+        gateOpenUntil = now + windowMs;
+        hasUserSpeechInGate = false;
+        lastSpeechAt = now;
         console.log("Wake word detected");
         playBeep();
-
-        // …а окно для речи открываем уже ПОСЛЕ бипа.
-        setTimeout(() => {
-          const start = Date.now();
-          gateOpenUntil = start + windowMs;
-          hasUserSpeechInGate = false;
-          lastSpeechAt = start;
-          console.log("Gate opened after beep");
-        }, beepDurationMs + 50);
       }
     }
 
@@ -202,14 +159,6 @@ async function main() {
     });
   }
   startMic();
-
-  // Двойной бип при старте, чтобы прогреть вывод и дать понятный сигнал
-  setTimeout(() => {
-    playBeep();
-    setTimeout(() => {
-      playBeep();
-    }, beepDurationMs + 150);
-  }, 500);
 
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
@@ -245,7 +194,6 @@ async function main() {
 
   const shutdown = () => {
     if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
-    if (silenceInterval != null) clearInterval(silenceInterval);
     stopMicRef();
     wakeEngine.release();
     if (player && !player.killed) player.kill();
