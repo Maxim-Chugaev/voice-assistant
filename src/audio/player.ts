@@ -91,7 +91,7 @@ export function spawnPlayer(
 export function createBeepBuffer(durationMs: number, freqHz: number): Buffer {
   const samples = Math.max(1, Math.floor((SAMPLE_RATE * durationMs) / 1000));
   const arr = new Int16Array(samples);
-  const amplitude = 0.25 * 0x7fff;
+  const amplitude = 0.8 * 0x7fff;
   for (let i = 0; i < samples; i++) {
     const t = i / SAMPLE_RATE;
     arr[i] = Math.round(amplitude * Math.sin(2 * Math.PI * freqHz * t));
