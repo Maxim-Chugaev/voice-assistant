@@ -171,6 +171,14 @@ async function main() {
   }
   startMic();
 
+  // Двойной бип при старте, чтобы прогреть вывод и дать понятный сигнал
+  setTimeout(() => {
+    playBeep();
+    setTimeout(() => {
+      playBeep();
+    }, beepDurationMs + 150);
+  }, 500);
+
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
     const chunk = Buffer.from(new Uint8Array(event.data));
