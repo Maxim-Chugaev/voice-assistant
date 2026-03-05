@@ -99,6 +99,8 @@ yarn audio-test
 | `GATE_SILENCE_MS` | Закрыть окно, если столько миллисекунд нет речи (по умолчанию 1200). |
 | `MIN_RMS` | Порог RMS для локального VAD (по умолчанию 200). Меньше — чувствительнее к тихой речи. |
 | `WAKE_DEBOUNCE_MS` | Антидребезг для wake word (по умолчанию 1500 мс). |
+| `AUDIO_DEVICE` | Устройство записи (микрофон): Linux — `arecord -D`, macOS — через `AUDIODEV`. |
+| `AUDIO_OUTPUT_DEVICE` | Устройство воспроизведения (колонки). **Linux**: target для `pw-play` (имя или id узла). Список: `wpctl status` или `pw-cli list-objects Node` — в разделе Sinks взять id или имя нужного вывода. По умолчанию — системное (часто Bluetooth). macOS: не задавать. |
 
 ## Типичные проблемы и подсказки
 
@@ -114,6 +116,11 @@ yarn audio-test
 - **Нет звука / ошибка при воспроизведении**:
   - Linux: убедитесь, что установлен PipeWire и в PATH есть `pw-play`.
   - macOS: установите SoX — `brew install sox` (нужна команда `play`).
+
+- **На Linux звук идёт в Bluetooth-колонку, а нужны проводные (например Edifier по USB)**:
+  - Список устройств вывода: выполните **`wpctl status`** (или `pw-cli list-objects Node`). В разделе **Audio → Sinks** найдите свой USB-выход (Edifier / USB Audio) и запомните **id** (число) или **имя** узла.
+  - В `.env` задайте `AUDIO_OUTPUT_DEVICE` — этот id или имя, например: `AUDIO_OUTPUT_DEVICE=42` или `AUDIO_OUTPUT_DEVICE=alsa_output.usb-0bda_4014-00.analog-stereo`.
+  - Перезапустите ассистента — воспроизведение пойдёт в выбранное устройство.
 
 ## Структура проекта
 

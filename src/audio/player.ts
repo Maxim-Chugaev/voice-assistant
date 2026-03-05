@@ -4,8 +4,24 @@ import { platform } from "node:os";
 const SAMPLE_RATE = 24000;
 const CHANNELS = 1;
 
-function getPlayerCommand(): { cmd: string; args: string[] } {
+function getPlayerCommand(outputDevice?: string): { cmd: string; args: string[] } {
   if (platform() === "darwin") {
+    if (outputDevice?.trim()) {
+      return {
+        cmd: "sox",
+        args: [
+          "-q",
+          "-t", "raw",
+          "-r", String(SAMPLE_RATE),
+          "-e", "signed-integer",
+          "-b", "16",
+          "-c", String(CHANNELS),
+          "-",
+          "-t", "coreaudio",
+          outputDevice.trim(),
+        ],
+      };
+    }
     return {
       cmd: "play",
       args: [
@@ -19,15 +35,19 @@ function getPlayerCommand(): { cmd: string; args: string[] } {
       ],
     };
   }
+  const pwArgs = [
+    "--raw",
+    "--rate", String(SAMPLE_RATE),
+    "--channels", String(CHANNELS),
+    "--format", "s16",
+    "-",
+  ];
+  if (outputDevice?.trim()) {
+    pwArgs.unshift("--target", outputDevice.trim());
+  }
   return {
     cmd: "pw-play",
-    args: [
-      "--raw",
-      "--rate", String(SAMPLE_RATE),
-      "--channels", String(CHANNELS),
-      "--format", "s16",
-      "-",
-    ],
+    args: pwArgs,
   };
 }
 
@@ -35,12 +55,14 @@ export type ChildProcessWithStdin = ReturnType<typeof spawn>;
 
 /**
  * Запускает плеер (sox play на macOS, pw-play на Linux).
+ * outputDevice: на macOS — имя устройства CoreAudio, на Linux — target для pw-play (см. pw-play --list-targets).
  * onStdinError вызывается при EPIPE, чтобы можно было пересоздать плеер.
  */
 export function spawnPlayer(
   onStdinError?: (err: NodeJS.ErrnoException) => void,
+  outputDevice?: string,
 ): ChildProcessWithStdin {
-  const { cmd, args } = getPlayerCommand();
+  const { cmd, args } = getPlayerCommand(outputDevice);
   const proc = spawn(cmd, args, {
     stdio: ["pipe", "ignore", "pipe"],
   });
@@ -85,8 +107,9 @@ export function playBeep(
   beepBuffer: Buffer,
   durationMs: number,
   onDone?: () => void,
+  outputDevice?: string,
 ): void {
-  const proc = spawnPlayer();
+  const proc = spawnPlayer(undefined, outputDevice);
   proc.stdin?.once("error", () => {});
   proc.stdin?.write(beepBuffer, () => {
     proc.stdin?.end();

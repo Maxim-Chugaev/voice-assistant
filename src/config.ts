@@ -35,6 +35,8 @@ export const config = {
   },
   /** Устройство записи на Linux (arecord -D) / macOS (AUDIODEV) */
   audioDevice: process.env.AUDIO_DEVICE,
+  /** Устройство воспроизведения (Linux): target для pw-play — pw-play --list-targets */
+  audioOutputDevice: process.env.AUDIO_OUTPUT_DEVICE,
 } as const;
 
 export function requireEnv(name: string, value: string | undefined): string {

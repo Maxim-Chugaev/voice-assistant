@@ -80,24 +80,24 @@ async function main() {
   let beepPlaying = false;
   let wakeBuffer = Buffer.alloc(0);
 
-  const { stream: micStream, stop: stopMic } = createMic({
-    device: config.audioDevice,
-  });
-
   const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
+  const outputDevice = config.audioOutputDevice ?? undefined;
   const playBeep = () => {
     if (beepPlaying) return;
     beepPlaying = true;
     playBeepSound(beepBuffer, beepDurationMs, () => {
       beepPlaying = false;
-    });
+    }, outputDevice);
   };
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
-  });
+  }, outputDevice);
 
-  micStream.on("data", (chunk: Buffer) => {
+  let stopMicRef: () => void = () => {};
+  let micReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function onMicData(chunk: Buffer) {
     wakeBuffer = Buffer.concat([wakeBuffer, chunk]);
     while (wakeBuffer.length >= frameBytes) {
       const frame = wakeBuffer.subarray(0, frameBytes);
@@ -142,7 +142,21 @@ async function main() {
       chunk.byteOffset + chunk.byteLength,
     ) as ArrayBuffer;
     session.sendAudio(ab);
-  });
+  }
+
+  function startMic() {
+    const { stream, stop } = createMic({ device: config.audioDevice });
+    stopMicRef = stop;
+    stream.on("data", onMicData);
+    stream.on("end", () => {
+      console.error("Mic stream ended, reconnecting in 2s…");
+      micReconnectTimeout = setTimeout(startMic, 2000);
+    });
+    stream.on("error", () => {
+      micReconnectTimeout = setTimeout(startMic, 2000);
+    });
+  }
+  startMic();
 
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
@@ -150,7 +164,7 @@ async function main() {
     if (!player || player.killed || player.stdin?.destroyed) {
       player = spawnPlayer((err) => {
         if (err?.code === "EPIPE") player = null;
-      });
+      }, outputDevice);
     }
     if (player?.stdin?.writable) {
       try {
@@ -186,13 +200,14 @@ async function main() {
       if (player === current) {
         player = spawnPlayer((err) => {
           if (err?.code === "EPIPE") player = null;
-        });
+        }, outputDevice);
       }
     }, 150);
   });
 
   const shutdown = () => {
-    stopMic();
+    if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
+    stopMicRef();
     wakeEngine.release();
     if (player && !player.killed) player.kill();
     session.close();
