@@ -78,16 +78,21 @@ async function main() {
   let lastWakeAt = 0;
   let hasUserSpeechInGate = false;
   let beepPlaying = false;
+  let silenceInterval: ReturnType<typeof setInterval> | null = null;
   let wakeBuffer = Buffer.alloc(0);
 
   const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
   const outputDevice = config.audioOutputDevice ?? undefined;
+  const silenceBuffer = Buffer.alloc(
+    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 100) / 1000),
+  ); // ~100 мс тишины
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
   }, outputDevice);
 
   const playBeep = () => {
+    if (assistantSpeaking) return;
     if (beepPlaying) return;
     beepPlaying = true;
     console.log("playBeep(): called");
@@ -111,6 +116,20 @@ async function main() {
     console.log("playBeep(): spawning dedicated player");
     playBeepSound(beepBuffer, beepDurationMs, done, outputDevice);
   };
+
+  const startSilenceLoop = () => {
+    if (silenceInterval != null) return;
+    silenceInterval = setInterval(() => {
+      if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
+      if (assistantSpeaking || beepPlaying) return;
+      try {
+        player.stdin.write(silenceBuffer);
+      } catch {
+        player = null;
+      }
+    }, 100);
+  };
+  startSilenceLoop();
 
   let stopMicRef: () => void = () => {};
   let micReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -222,25 +241,11 @@ async function main() {
 
   session.on("audio_stopped", () => {
     assistantSpeaking = false;
-    const current = player;
-    setTimeout(() => {
-      if (current?.stdin && !current.stdin.destroyed) {
-        try {
-          current.stdin.end();
-        } catch {
-          // ignore
-        }
-      }
-      if (player === current) {
-        player = spawnPlayer((err) => {
-          if (err?.code === "EPIPE") player = null;
-        }, outputDevice);
-      }
-    }, 150);
   });
 
   const shutdown = () => {
     if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
+    if (silenceInterval != null) clearInterval(silenceInterval);
     stopMicRef();
     wakeEngine.release();
     if (player && !player.killed) player.kill();
