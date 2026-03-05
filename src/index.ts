@@ -90,20 +90,25 @@ async function main() {
   const playBeep = () => {
     if (beepPlaying) return;
     beepPlaying = true;
+    console.log("playBeep(): called");
 
     const done = () => {
       beepPlaying = false;
+      console.log("playBeep(): done");
     };
 
     if (player?.stdin?.writable) {
       try {
+        console.log("playBeep(): writing to existing player stdin");
         player.stdin.write(beepBuffer, done);
         return;
       } catch {
+        console.log("playBeep(): error writing to existing player, falling back");
         player = null;
       }
     }
 
+    console.log("playBeep(): spawning dedicated player");
     playBeepSound(beepBuffer, beepDurationMs, done, outputDevice);
   };
 
@@ -132,11 +137,19 @@ async function main() {
           (session as { interrupt?: () => void }).interrupt?.();
           assistantSpeaking = false;
         }
-        gateOpenUntil = now + windowMs;
-        hasUserSpeechInGate = false;
-        lastSpeechAt = now;
+
+        // Сначала только сигнал «услышал»…
         console.log("Wake word detected");
         playBeep();
+
+        // …а окно для речи открываем уже ПОСЛЕ бипа.
+        setTimeout(() => {
+          const start = Date.now();
+          gateOpenUntil = start + windowMs;
+          hasUserSpeechInGate = false;
+          lastSpeechAt = start;
+          console.log("Gate opened after beep");
+        }, beepDurationMs + 50);
       }
     }
 
