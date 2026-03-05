@@ -143,6 +143,13 @@ async function main() {
     if (assistantSpeaking) return;
     if (!gateOpenUntil || Date.now() > gateOpenUntil) return;
 
+    if (hasSpeechInChunk(chunk, minRms)) {
+      hasUserSpeechInGate = true;
+      lastSpeechAt = Date.now();
+    } else if (hasUserSpeechInGate && Date.now() - lastSpeechAt > silenceMs) {
+      gateOpenUntil = 0;
+    }
+
     const ab = chunk.buffer.slice(
       chunk.byteOffset,
       chunk.byteOffset + chunk.byteLength,
