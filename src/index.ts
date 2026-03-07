@@ -83,42 +83,66 @@ async function main() {
   const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
   const outputDevice = config.audioOutputDevice ?? undefined;
   const silenceBuffer = Buffer.alloc(
-    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 100) / 1000),
-  ); // ~100 мс тишины
+    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 50) / 1000),
+  ); // 50 мс — меньше буфер, бип ближе к wake word
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
   }, outputDevice);
 
+  const audioChunkQueue: Buffer[] = [];
+  let drainScheduled = false;
+  const flushAudioQueue = () => {
+    if (!player?.stdin?.writable || audioChunkQueue.length === 0) return;
+    while (audioChunkQueue.length > 0) {
+      const ok = player.stdin.write(audioChunkQueue[0]);
+      audioChunkQueue.shift();
+      if (!ok) {
+        if (!drainScheduled) {
+          drainScheduled = true;
+          player.stdin.once("drain", () => {
+            drainScheduled = false;
+            flushAudioQueue();
+          });
+        }
+        return;
+      }
+    }
+  };
+
   const playBeep = () => {
     if (beepPlaying) return;
-    if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
     beepPlaying = true;
-    try {
-      player.stdin.write(beepBuffer, () => {
-        beepPlaying = false;
-      });
-    } catch {
+    const done = () => {
       beepPlaying = false;
+    };
+    if (!player || player.killed || !player.stdin || player.stdin.destroyed) {
+      playBeepSound(beepBuffer, beepDurationMs, done, outputDevice);
+      return;
+    }
+    try {
+      player.stdin.write(beepBuffer, done);
+    } catch {
+      done();
       player = null;
     }
   };
 
   let silenceInterval: ReturnType<typeof setInterval> | null = null;
+  let lastAudioStoppedAt = 0;
+  const SILENCE_PAUSE_MS = 450;
   const startSilenceLoop = () => {
-    // Постоянный тихий поток нужен только на Linux (Raspberry),
-    // на macOS он даёт заикания, поэтому там не включаем.
-    if (process.platform !== "linux") return;
     if (silenceInterval != null) return;
     silenceInterval = setInterval(() => {
       if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
       if (assistantSpeaking || beepPlaying) return;
+      if (Date.now() - lastAudioStoppedAt < SILENCE_PAUSE_MS) return;
       try {
         player.stdin.write(silenceBuffer);
       } catch {
         player = null;
       }
-    }, 100);
+    }, 120);
   };
   startSilenceLoop();
 
@@ -194,15 +218,17 @@ async function main() {
       player = spawnPlayer((err) => {
         if (err?.code === "EPIPE") player = null;
       }, outputDevice);
+      audioChunkQueue.length = 0;
+      drainScheduled = false;
     }
-    if (player?.stdin?.writable) {
-      try {
-        player.stdin.write(chunk);
-      } catch (err: unknown) {
-        const e = err as { code?: string; message?: string };
-        if (e?.code !== "EPIPE") console.error("Player write error:", e?.message);
-        player = null;
-      }
+    if (!player?.stdin?.writable) return;
+    try {
+      audioChunkQueue.push(chunk);
+      flushAudioQueue();
+    } catch (err: unknown) {
+      const e = err as { code?: string; message?: string };
+      if (e?.code !== "EPIPE") console.error("Player write error:", e?.message);
+      player = null;
     }
   });
 
@@ -217,6 +243,7 @@ async function main() {
 
   session.on("audio_stopped", () => {
     assistantSpeaking = false;
+    lastAudioStoppedAt = Date.now();
   });
 
   const shutdown = () => {
