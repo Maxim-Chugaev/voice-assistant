@@ -46,12 +46,6 @@ Or quick dev run (rebuild + run):
 yarn dev
 ```
 
-Wake‑word–only test (no Realtime API):
-
-```bash
-yarn audio-test
-```
-
 ## How it works
 
 1. On startup we create a `RealtimeAgent` and `RealtimeSession` with model `gpt-realtime` and config:
