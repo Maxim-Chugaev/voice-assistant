@@ -246,6 +246,27 @@ async function main() {
     lastAudioStoppedAt = Date.now();
   });
 
+  session.on("error", (evt: unknown) => {
+    const e = evt as {
+      error?: {
+        error?: { code?: string; message?: string };
+        code?: string;
+        message?: string;
+      };
+    };
+    const code = e?.error?.error?.code ?? e?.error?.code;
+    const message = e?.error?.error?.message ?? e?.error?.message;
+    if (code === "session_expired") {
+      console.error(
+        "Realtime session expired (60 min), exiting so supervisor (systemd/loop) can restart.",
+        message,
+      );
+      shutdown();
+      return;
+    }
+    console.error("Realtime session error:", code ?? "", message ?? "");
+  });
+
   const shutdown = () => {
     if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
     if (silenceInterval != null) clearInterval(silenceInterval);
