@@ -86,6 +86,11 @@ async function main() {
   const silenceBuffer = Buffer.alloc(
     Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 50) / 1000),
   ); // 50 ms — smaller buffer, beep closer to wake word
+  // Warmup silence: prepended before beep and each new response to prevent
+  // PipeWire/ALSA from swallowing the first ~200 ms on Raspberry Pi.
+  const warmupBuffer = Buffer.alloc(
+    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 200) / 1000),
+  ); // 200 ms
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;
@@ -123,6 +128,7 @@ async function main() {
       return;
     }
     try {
+      player.stdin.write(warmupBuffer);
       player.stdin.write(beepBuffer, done);
     } catch {
       done();
@@ -214,6 +220,7 @@ async function main() {
   startMic();
 
   session.on("audio", (event: TransportLayerAudio) => {
+    const isFirstChunk = !assistantSpeaking;
     assistantSpeaking = true;
     const chunk = Buffer.from(new Uint8Array(event.data));
     if (!player || player.killed || player.stdin?.destroyed) {
@@ -225,6 +232,9 @@ async function main() {
     }
     if (!player?.stdin?.writable) return;
     try {
+      if (isFirstChunk && audioChunkQueue.length === 0) {
+        audioChunkQueue.push(warmupBuffer);
+      }
       if (audioChunkQueue.length < AUDIO_QUEUE_MAX) {
         audioChunkQueue.push(chunk);
       }

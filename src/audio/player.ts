@@ -109,6 +109,8 @@ export function playBeep(
   onDone?: () => void,
   outputDevice?: string,
 ): void {
+  const WARMUP_MS = 200;
+  const warmup = Buffer.alloc(Math.floor((SAMPLE_RATE * 2 * WARMUP_MS) / 1000));
   const proc = spawnPlayer(undefined, outputDevice);
   let called = false;
   const finish = () => {
@@ -117,9 +119,10 @@ export function playBeep(
     onDone?.();
   };
   proc.stdin?.once("error", () => {});
+  proc.stdin?.write(warmup);
   proc.stdin?.write(beepBuffer, () => {
     proc.stdin?.end();
   });
   proc.on("close", finish);
-  setTimeout(finish, durationMs + 100);
+  setTimeout(finish, durationMs + WARMUP_MS + 100);
 }
