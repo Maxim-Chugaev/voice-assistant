@@ -114,6 +114,22 @@ See `.env.example` for the full list. Short summary:
   - In `.env` set `AUDIO_OUTPUT_DEVICE` to that id or name, e.g. `AUDIO_OUTPUT_DEVICE=42` or `AUDIO_OUTPUT_DEVICE=alsa_output.usb-0bda_4014-00.analog-stereo`.
   - Restart the assistant — audio will go to the selected sink.
 
+- **On Raspberry Pi mic suddenly stops working after reboot**:
+  - ALSA card indices can change between boots. Run `arecord -l` and check which **card/device** is your mic (e.g. `card 3: USB PnP Audio Device, device 0`).
+  - Update `.env` accordingly, e.g. `AUDIO_DEVICE=plughw:3,0` (card 3, device 0).
+  - Restart the assistant (systemd user service or `yarn start`).
+
+- **On Raspberry Pi with USB speakers the beep / beginning of the answer is sometimes cut off**:
+  - This is usually due to the USB audio sink and PipeWire suspending/rewiring the stream. You can reduce this by creating `~/.config/pipewire/pipewire.conf.d/10-no-suspend.conf` and disabling suspend:
+    - Set `session.suspend-timeout-seconds = 0` to prevent auto‑suspend.
+    - Optionally add a `context.rules` block for your sink `node.name` (from `wpctl status` / `pw-cli`) and set a reasonable `node.latency` (e.g. `256/24000`).
+  - Reboot the Pi so PipeWire picks up the new config.
+
+- **Process exits with `session_expired` after ~60 minutes**:
+  - Realtime sessions are limited to 60 minutes by the API. This project listens for `session_expired` and exits cleanly so a supervisor can restart it.
+  - On Raspberry Pi, configure your `voice-assistant.service` (user unit) with `Restart=always` and `RestartSec=5`, run `systemctl --user daemon-reload` and then `systemctl --user restart voice-assistant`.
+  - On macOS or when running manually, you can wrap `node dist/index.js` in a simple `while true; do ...; sleep 5; done` shell loop to auto‑restart.
+
 ## Project structure
 
 - `src/index.ts` — main assistant: Porcupine, wake word, gate window, local VAD, `RealtimeSession`, audio output.
