@@ -5,12 +5,7 @@ import {
 } from "@openai/agents/realtime";
 import { config, requireEnv } from "./config.js";
 import { createMic } from "./audio/mic.js";
-import {
-  spawnPlayer,
-  createBeepBuffer,
-  playBeep as playBeepSound,
-  type ChildProcessWithStdin,
-} from "./audio/player.js";
+import { PcmOutput } from "./audio/output.js";
 import { initWakeWord } from "./wakeword.js";
 
 /** Simple RMS‑based VAD: above threshold = treat chunk as speech. */
@@ -81,69 +76,14 @@ async function main() {
   let beepPlaying = false;
   let wakeBuffer = Buffer.alloc(0);
 
-  const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
-  const outputDevice = config.audioOutputDevice ?? undefined;
-  const silenceBuffer = Buffer.alloc(
-    Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 50) / 1000),
-  ); // 50 ms
-
-  let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
-    if (err?.code === "EPIPE") player = null;
-  }, outputDevice);
-
-  const AUDIO_QUEUE_MAX = 200;
-  const audioChunkQueue: Buffer[] = [];
-  let drainScheduled = false;
-  const flushAudioQueue = () => {
-    if (!player?.stdin?.writable || audioChunkQueue.length === 0) return;
-    while (audioChunkQueue.length > 0) {
-      const ok = player.stdin.write(audioChunkQueue[0]);
-      audioChunkQueue.shift();
-      if (!ok) {
-        if (!drainScheduled) {
-          drainScheduled = true;
-          player.stdin.once("drain", () => {
-            drainScheduled = false;
-            flushAudioQueue();
-          });
-        }
-        return;
-      }
-    }
-  };
+  const output = new PcmOutput();
 
   const playBeep = () => {
     if (beepPlaying) return;
     beepPlaying = true;
-    const done = () => {
-      beepPlaying = false;
-    };
-    if (!player || player.killed || !player.stdin || player.stdin.destroyed) {
-      playBeepSound(beepBuffer, beepDurationMs, done, outputDevice);
-      return;
-    }
-    try {
-      player.stdin.write(beepBuffer, done);
-    } catch {
-      done();
-      player = null;
-    }
+    output.beep(beepDurationMs, beepFreqHz);
+    beepPlaying = false;
   };
-
-  let silenceInterval: ReturnType<typeof setInterval> | null = null;
-  const startSilenceLoop = () => {
-    if (silenceInterval != null) return;
-    silenceInterval = setInterval(() => {
-      if (!player || player.killed || !player.stdin || player.stdin.destroyed) return;
-      if (assistantSpeaking || beepPlaying) return;
-      try {
-        player.stdin.write(silenceBuffer);
-      } catch {
-        player = null;
-      }
-    }, 120);
-  };
-  startSilenceLoop();
 
   let stopMicRef: () => void = () => {};
   let micReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -213,23 +153,11 @@ async function main() {
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
     const chunk = Buffer.from(new Uint8Array(event.data));
-    if (!player || player.killed || player.stdin?.destroyed) {
-      player = spawnPlayer((err) => {
-        if (err?.code === "EPIPE") player = null;
-      }, outputDevice);
-      audioChunkQueue.length = 0;
-      drainScheduled = false;
-    }
-    if (!player?.stdin?.writable) return;
     try {
-      if (audioChunkQueue.length < AUDIO_QUEUE_MAX) {
-        audioChunkQueue.push(chunk);
-      }
-      flushAudioQueue();
+      output.write(chunk);
     } catch (err: unknown) {
       const e = err as { code?: string; message?: string };
-      if (e?.code !== "EPIPE") console.error("Player write error:", e?.message);
-      player = null;
+      console.error("Player write error:", e?.message);
     }
   });
 
@@ -269,10 +197,9 @@ async function main() {
 
   const shutdown = () => {
     if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
-    if (silenceInterval != null) clearInterval(silenceInterval);
     stopMicRef();
     wakeEngine.release();
-    if (player && !player.killed) player.kill();
+    output.close();
     session.close();
     process.exit(0);
   };
