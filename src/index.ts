@@ -5,7 +5,12 @@ import {
 } from "@openai/agents/realtime";
 import { config, requireEnv } from "./config.js";
 import { createMic } from "./audio/mic.js";
-import { PcmOutput } from "./audio/output.js";
+import {
+  spawnPlayer,
+  createBeepBuffer,
+  playBeep as playBeepSound,
+  type ChildProcessWithStdin,
+} from "./audio/player.js";
 import { initWakeWord } from "./wakeword.js";
 
 /** Simple RMS‑based VAD: above threshold = treat chunk as speech. */
@@ -76,13 +81,19 @@ async function main() {
   let beepPlaying = false;
   let wakeBuffer = Buffer.alloc(0);
 
-  const output = new PcmOutput();
+  const beepBuffer = createBeepBuffer(beepDurationMs, beepFreqHz);
+  const outputDevice = config.audioOutputDevice ?? undefined;
+
+  let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
+    if (err?.code === "EPIPE") player = null;
+  }, outputDevice);
 
   const playBeep = () => {
     if (beepPlaying) return;
     beepPlaying = true;
-    output.beep(beepDurationMs, beepFreqHz);
-    beepPlaying = false;
+    playBeepSound(beepBuffer, beepDurationMs, () => {
+      beepPlaying = false;
+    }, outputDevice);
   };
 
   let stopMicRef: () => void = () => {};
@@ -153,11 +164,18 @@ async function main() {
   session.on("audio", (event: TransportLayerAudio) => {
     assistantSpeaking = true;
     const chunk = Buffer.from(new Uint8Array(event.data));
+    if (!player || player.killed || player.stdin?.destroyed) {
+      player = spawnPlayer((err) => {
+        if (err?.code === "EPIPE") player = null;
+      }, outputDevice);
+    }
+    if (!player?.stdin?.writable) return;
     try {
-      output.write(chunk);
+      player.stdin.write(chunk);
     } catch (err: unknown) {
       const e = err as { code?: string; message?: string };
-      console.error("Player write error:", e?.message);
+      if (e?.code !== "EPIPE") console.error("Player write error:", e?.message);
+      player = null;
     }
   });
 
@@ -199,7 +217,7 @@ async function main() {
     if (micReconnectTimeout != null) clearTimeout(micReconnectTimeout);
     stopMicRef();
     wakeEngine.release();
-    output.close();
+    if (player && !player.killed) player.kill();
     session.close();
     process.exit(0);
   };

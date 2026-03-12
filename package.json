@@ -25,7 +25,6 @@
     "@openai/agents": "^0.5.2",
     "@picovoice/porcupine-node": "^3.0.5",
     "dotenv": "^16.4.5",
-    "speaker": "^0.5.4",
     "zod": "^4.0.0"
   },
   "devDependencies": {
