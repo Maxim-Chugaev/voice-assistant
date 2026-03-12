@@ -63,6 +63,7 @@ async function main() {
     porcupineKey,
     config.porcupine.keywordPath,
     config.porcupine.builtinKeyword,
+    config.porcupine.sensitivity,
   );
   console.log(`Wake-word active: ${wakeLabel}`);
 
@@ -90,6 +91,7 @@ async function main() {
     if (err?.code === "EPIPE") player = null;
   }, outputDevice);
 
+  const AUDIO_QUEUE_MAX = 200;
   const audioChunkQueue: Buffer[] = [];
   let drainScheduled = false;
   const flushAudioQueue = () => {
@@ -163,8 +165,8 @@ async function main() {
 
       if (keywordIndex >= 0) {
         const now = Date.now();
-        if (now - lastWakeAt < debounceMs) continue;
-        if (now <= gateOpenUntil && !assistantSpeaking) continue;
+        if (now - lastWakeAt < debounceMs) break;
+        if (now <= gateOpenUntil && !assistantSpeaking) break;
 
         lastWakeAt = now;
         if (assistantSpeaking) {
@@ -223,7 +225,9 @@ async function main() {
     }
     if (!player?.stdin?.writable) return;
     try {
-      audioChunkQueue.push(chunk);
+      if (audioChunkQueue.length < AUDIO_QUEUE_MAX) {
+        audioChunkQueue.push(chunk);
+      }
       flushAudioQueue();
     } catch (err: unknown) {
       const e = err as { code?: string; message?: string };

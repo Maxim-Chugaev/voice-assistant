@@ -3,6 +3,14 @@ import dotenv from "dotenv";
 dotenv.config();
 
 /** Configuration derived from .env and app constants. */
+function parseNum(envVar: string, defaultVal: number): number {
+  const val = Number(process.env[envVar] ?? defaultVal);
+  if (!Number.isFinite(val)) {
+    throw new Error(`Invalid value for ${envVar}: "${process.env[envVar]}" is not a number`);
+  }
+  return val;
+}
+
 export const config = {
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
@@ -11,20 +19,21 @@ export const config = {
     accessKey: process.env.PORCUPINE_ACCESS_KEY,
     keywordPath: process.env.PORCUPINE_KEYWORD_PATH,
     builtinKeyword: (process.env.PORCUPINE_BUILTIN_KEYWORD ?? "jarvis").toLowerCase(),
+    sensitivity: parseNum("PORCUPINE_SENSITIVITY", 0.65),
   },
   gate: {
     /** How many ms after wake word to stream mic audio into the API. */
-    windowMs: Number(process.env.WAKE_WINDOW_MS ?? "8000"),
+    windowMs: parseNum("WAKE_WINDOW_MS", 8000),
     /** Close gate if there is silence longer than this (ms). */
-    silenceMs: Number(process.env.GATE_SILENCE_MS ?? "1200"),
+    silenceMs: parseNum("GATE_SILENCE_MS", 1200),
     /** RMS threshold for "speech present" (local VAD). */
-    minRms: Number(process.env.MIN_RMS ?? "200"),
+    minRms: parseNum("MIN_RMS", 200),
     /** Debounce: ignore repeated wake words for this many ms. */
-    debounceMs: Number(process.env.WAKE_DEBOUNCE_MS ?? "1500"),
+    debounceMs: parseNum("WAKE_DEBOUNCE_MS", 1500),
   },
   beep: {
-    durationMs: Number(process.env.BEEP_DURATION_MS ?? "150"),
-    freqHz: Number(process.env.BEEP_FREQ ?? "880"),
+    durationMs: parseNum("BEEP_DURATION_MS", 150),
+    freqHz: parseNum("BEEP_FREQ", 880),
   },
   audio: {
     /** Output sample rate (assistant replies) — 24 kHz for OpenAI. */

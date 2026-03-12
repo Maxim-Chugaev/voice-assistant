@@ -12,7 +12,11 @@ export function createMic(options: { device?: string }): {
   stream: Readable;
   stop: () => void;
 } {
-  const isLinux = platform() === "linux";
+  const os = platform();
+  if (os === "win32") {
+    throw new Error("Windows is not supported. Use Linux (arecord) or macOS (sox).");
+  }
+  const isLinux = os === "linux";
   const device = options.device;
 
   const cmd = isLinux ? "arecord" : "sox";

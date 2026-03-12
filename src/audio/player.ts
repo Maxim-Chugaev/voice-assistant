@@ -109,20 +109,17 @@ export function playBeep(
   onDone?: () => void,
   outputDevice?: string,
 ): void {
-  console.log(
-    `playBeep: start, duration=${durationMs}ms, outputDevice=${outputDevice ?? "default"}`,
-  );
   const proc = spawnPlayer(undefined, outputDevice);
+  let called = false;
+  const finish = () => {
+    if (called) return;
+    called = true;
+    onDone?.();
+  };
   proc.stdin?.once("error", () => {});
   proc.stdin?.write(beepBuffer, () => {
     proc.stdin?.end();
   });
-  proc.on("close", () => {
-    console.log("playBeep: player process closed");
-    onDone?.();
-  });
-  setTimeout(() => {
-    console.log("playBeep: timeout reached");
-    onDone?.();
-  }, durationMs + 100);
+  proc.on("close", finish);
+  setTimeout(finish, durationMs + 100);
 }

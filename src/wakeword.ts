@@ -23,16 +23,17 @@ export function initWakeWord(
   accessKey: string,
   keywordPath: string | undefined,
   builtinKeyword: string,
+  sensitivity: number,
 ): { engine: WakeWordEngine; label: string } {
   if (keywordPath) {
-    const porcupine = new Porcupine(accessKey, [keywordPath], [0.65]);
+    const porcupine = new Porcupine(accessKey, [keywordPath], [sensitivity]);
     return {
       engine: wrapPorcupine(porcupine),
       label: `custom(${keywordPath})`,
     };
   }
   const keyword = builtinKeyword || "jarvis";
-  const porcupine = new Porcupine(accessKey, [keyword], [0.65]);
+  const porcupine = new Porcupine(accessKey, [keyword], [sensitivity]);
   return {
     engine: wrapPorcupine(porcupine),
     label: keyword,
