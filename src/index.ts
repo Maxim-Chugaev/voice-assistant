@@ -13,7 +13,7 @@ import {
 } from "./audio/player.js";
 import { initWakeWord } from "./wakeword.js";
 
-/** Порог RMS: выше — считаем, что в чанке есть речь (простой VAD) */
+/** Simple RMS‑based VAD: above threshold = treat chunk as speech. */
 function hasSpeechInChunk(pcm: Buffer, minRms: number): boolean {
   if (pcm.length < 2) return false;
   let sum = 0;
@@ -32,7 +32,7 @@ async function main() {
 
   const agent = new RealtimeAgent({
     name: "Assistant",
-    instructions: "Ты полезный голосовой ассистент. Отвечай коротко и по делу.",
+    instructions: "You are a helpful voice assistant. Answer briefly and to the point.",
   });
 
   const session = new RealtimeSession(agent, {
@@ -84,7 +84,7 @@ async function main() {
   const outputDevice = config.audioOutputDevice ?? undefined;
   const silenceBuffer = Buffer.alloc(
     Math.floor((config.audio.outputSampleRate * config.audio.channels * 2 * 50) / 1000),
-  ); // 50 мс — меньше буфер, бип ближе к wake word
+  ); // 50 ms — smaller buffer, beep closer to wake word
 
   let player: ChildProcessWithStdin | null = spawnPlayer((err) => {
     if (err?.code === "EPIPE") player = null;

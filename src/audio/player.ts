@@ -54,9 +54,9 @@ function getPlayerCommand(outputDevice?: string): { cmd: string; args: string[] 
 export type ChildProcessWithStdin = ReturnType<typeof spawn>;
 
 /**
- * Запускает плеер (sox play на macOS, pw-play на Linux).
- * outputDevice: на macOS — имя устройства CoreAudio, на Linux — target для pw-play (см. pw-play --list-targets).
- * onStdinError вызывается при EPIPE, чтобы можно было пересоздать плеер.
+ * Starts an external player (sox play on macOS, pw-play on Linux).
+ * outputDevice: macOS — CoreAudio device name, Linux — pw-play target (see pw-play --list-targets).
+ * onStdinError is called on EPIPE so the caller can recreate the player.
  */
 export function spawnPlayer(
   onStdinError?: (err: NodeJS.ErrnoException) => void,
@@ -86,7 +86,7 @@ export function spawnPlayer(
 }
 
 /**
- * Генерирует буфер PCM для короткого тонового сигнала (бип).
+ * Generates a PCM buffer for a short tone (beep).
  */
 export function createBeepBuffer(durationMs: number, freqHz: number): Buffer {
   const samples = Math.max(1, Math.floor((SAMPLE_RATE * durationMs) / 1000));
@@ -100,8 +100,8 @@ export function createBeepBuffer(durationMs: number, freqHz: number): Buffer {
 }
 
 /**
- * Проигрывает бип в отдельном процессе плеера.
- * onDone вызывается после окончания (по таймауту).
+ * Plays a beep in a separate player process.
+ * onDone is called when playback is finished (or after a timeout).
  */
 export function playBeep(
   beepBuffer: Buffer,

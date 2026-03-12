@@ -5,8 +5,8 @@ import type { Readable } from "node:stream";
 const INPUT_SAMPLE_RATE = 16000;
 
 /**
- * Запускает запись с микрофона через arecord (Linux) или sox (macOS).
- * Возвращает поток сырых PCM 16 kHz mono s16le и функцию остановки.
+ * Starts mic capture via arecord (Linux) or sox (macOS).
+ * Returns a raw PCM 16 kHz mono s16le stream and a stop function.
  */
 export function createMic(options: { device?: string }): {
   stream: Readable;

@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-/** Параметры из .env и константы приложения */
+/** Configuration derived from .env and app constants. */
 export const config = {
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
@@ -13,13 +13,13 @@ export const config = {
     builtinKeyword: (process.env.PORCUPINE_BUILTIN_KEYWORD ?? "jarvis").toLowerCase(),
   },
   gate: {
-    /** Сколько миллисекунд после wake word отправлять речь в API */
+    /** How many ms after wake word to stream mic audio into the API. */
     windowMs: Number(process.env.WAKE_WINDOW_MS ?? "8000"),
-    /** Закрыть окно, если тишина дольше (мс) */
+    /** Close gate if there is silence longer than this (ms). */
     silenceMs: Number(process.env.GATE_SILENCE_MS ?? "1200"),
-    /** Порог RMS для «есть речь» (локальный VAD) */
+    /** RMS threshold for "speech present" (local VAD). */
     minRms: Number(process.env.MIN_RMS ?? "200"),
-    /** Антидребезг: не реагировать на повторный wake word раньше (мс) */
+    /** Debounce: ignore repeated wake words for this many ms. */
     debounceMs: Number(process.env.WAKE_DEBOUNCE_MS ?? "1500"),
   },
   beep: {
@@ -27,15 +27,15 @@ export const config = {
     freqHz: Number(process.env.BEEP_FREQ ?? "880"),
   },
   audio: {
-    /** Частота выхода (ответы ассистента) — 24 kHz для OpenAI */
+    /** Output sample rate (assistant replies) — 24 kHz for OpenAI. */
     outputSampleRate: 24000,
-    /** Частота входа (микрофон, Porcupine) */
+    /** Input sample rate (mic, Porcupine). */
     inputSampleRate: 16000,
     channels: 1,
   },
-  /** Устройство записи на Linux (arecord -D) / macOS (AUDIODEV) */
+  /** Input device on Linux (arecord -D) / macOS (AUDIODEV). */
   audioDevice: process.env.AUDIO_DEVICE,
-  /** Устройство воспроизведения (Linux): target для pw-play — pw-play --list-targets */
+  /** Output device on Linux: pw-play target — see pw-play --list-targets. */
   audioOutputDevice: process.env.AUDIO_OUTPUT_DEVICE,
 } as const;
 

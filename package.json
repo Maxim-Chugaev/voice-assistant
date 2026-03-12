@@ -1,7 +1,7 @@
 {
   "name": "voice-assistant",
   "version": "2.0.0",
-  "description": "Голосовой помощник на Node.js/TypeScript с OpenAI Realtime API",
+  "description": "Voice assistant on Node.js/TypeScript powered by OpenAI Realtime API",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

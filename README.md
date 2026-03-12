@@ -1,133 +1,131 @@
-## Голосовой ассистент (OpenAI Realtime + Porcupine)
+## Voice assistant (OpenAI Realtime + Porcupine)
 
-Голосовой ассистент на **Node.js/TypeScript**, построенный на **OpenAI Realtime API**:
-распознавание речи, чат и синтез голоса происходят внутри одной realtime-сессии.
-Активация по локальному wake word через **Picovoice Porcupine**.
+Node.js/TypeScript voice assistant built on **OpenAI Realtime API**: speech‑in, chat, and TTS all happen inside a single realtime session. Wake‑word detection is fully local via **Picovoice Porcupine**.
 
-### Возможности
+### Features
 
-- **Локальный wake word**: по умолчанию слово `jarvis` (или другой доступный builtin, либо свой `.ppn`).
-- **Gate-окно**: после wake word микрофон попадает в «окно» фиксированной длины и только в нём стримится в Realtime API.
-- **Локальный VAD (RMS)**: внутри окна тишина/шум отсекаются и окно может закрыться раньше по `GATE_SILENCE_MS`.
-- **Авто-завершение фразы**: на стороне OpenAI включён `semantic_vad` с `createResponse`, поэтому модель сама понимает, когда вы договорили.
-- **Barge‑in**: если сказать wake word, пока ассистент говорит, текущий ответ прерывается и начинается новый.
-- **Само-защита от самопереговора**: пока ассистент произносит ответ, микрофон не стримится в Realtime API.
+- **Local wake word**: by default `jarvis` (or any supported builtin keyword, or your own `.ppn` file).
+- **Gate window**: after the wake word, mic audio is streamed to Realtime API only inside a fixed‑length window.
+- **Local VAD (RMS)**: inside the window we drop silence/noise and can close the window early after `GATE_SILENCE_MS` ms of silence.
+- **Automatic end‑of‑utterance**: OpenAI side uses `semantic_vad + createResponse`, so the model decides when you finished speaking.
+- **Barge‑in**: saying the wake word while the assistant is speaking interrupts the current answer and starts a new turn.
+- **Self‑protection from self‑hearing**: while the assistant is speaking, mic audio is not streamed to Realtime API.
 
-## Требования
+## Requirements
 
 - **Node.js** 18+
-- **OpenAI API key** — для Realtime API (`gpt-realtime`).
-- **Picovoice Porcupine AccessKey** — для локального wake word.
-- **Воспроизведение звука** (одно из):
-  - **Linux**: PipeWire — `pw-play` (обычно уже есть при использовании PipeWire).
-  - **macOS**: SoX — `brew install sox` (команда `play`).
+- **OpenAI API key** — for Realtime API (`gpt-realtime`).
+- **Picovoice Porcupine AccessKey** — for local wake‑word detection.
+- **Audio output** (one of):
+  - **Linux**: PipeWire — `pw-play` (normally present if you use PipeWire).
+  - **macOS**: SoX — `brew install sox` (command `play`).
 
-## Установка
+## Setup
 
 ```bash
 cd voice-assistant
 yarn install
 cp .env.example .env
-# Отредактируйте .env и укажите:
+# Then edit .env and set:
 # - OPENAI_API_KEY=sk-...
 # - PORCUPINE_ACCESS_KEY=...
 ```
 
-## Запуск
+## Running
 
-Собрать и запустить:
+Build and run:
 
 ```bash
 yarn build
 yarn start
 ```
 
-Или одномоментно (быстрый запуск после правок):
+Or quick dev run (rebuild + run):
 
 ```bash
 yarn dev
 ```
 
-Проверка одного только wake word (без Realtime API):
+Wake‑word–only test (no Realtime API):
 
 ```bash
 yarn audio-test
 ```
 
-## Как это работает
+## How it works
 
-1. При старте создаётся `RealtimeAgent` и `RealtimeSession` с моделью `gpt-realtime` и конфигом:
+1. On startup we create a `RealtimeAgent` and `RealtimeSession` with model `gpt-realtime` and config:
    - `audio.input.format = "pcm16"`
    - `audio.input.transcription.model = "gpt-4o-mini-transcribe"`
    - `audio.input.turnDetection = semantic_vad + createResponse`
    - `audio.output.format = "pcm16"` (24 kHz)
-2. Микрофон читает **16 kHz mono PCM16** через `node-record-lpcm16`.
-3. Поток идёт в Porcupine (локально на CPU). При детекте wake word:
-   - открывается gate‑окно на `WAKE_WINDOW_MS` миллисекунд,
-   - запоминается время последней речи.
-4. Пока окно открыто:
-   - все аудиочанки стримятся в `session.sendAudio(...)`;
-   - локальный RMS‑VAD (`MIN_RMS`) следит за наличием речи и может закрыть окно раньше после `GATE_SILENCE_MS` тишины.
-5. Realtime‑модель сама детектит конец фразы (`semantic_vad`) и начинает говорить.
-6. Событие `session.on("audio")` отдаёт PCM‑чанки, которые передаются в внешний плеер: на Linux — `pw-play`, на macOS — `sox play` (24 kHz, mono, s16le).
+2. The mic reads **16 kHz mono PCM16** via `node-record-lpcm16`.
+3. Audio is fed into Porcupine locally. When the wake word is detected:
+   - a gate window is opened for `WAKE_WINDOW_MS` ms;
+   - we remember the time of the last detected speech.
+4. While the window is open:
+   - all chunks from the mic are streamed via `session.sendAudio(...)`;
+   - a simple RMS‑based VAD (`MIN_RMS`) tracks speech presence and can close the window early after `GATE_SILENCE_MS` ms of silence.
+5. The Realtime model itself detects end‑of‑utterance (`semantic_vad`) and starts speaking.
+6. `session.on("audio")` yields PCM chunks that are piped to an external player: on Linux — `pw-play`, on macOS — `sox play` (24 kHz, mono, s16le).
 
-## Использование
+## Usage
 
-1. Запустите ассистента (`yarn start` или `yarn dev`).
-2. В консоли должно появиться:
+1. Start the assistant (`yarn start` or `yarn dev`).
+2. In the console you should see:
    - `Connected. Say wake-word to activate…`
-   - `Wake-word active: jarvis` (или ваше слово).
-3. Скажите чётко wake word (например, **«jarvis»**), дождитесь в логах `Wake word detected`.
-4. Сразу после wake word произнесите команду:
-   - «какая сегодня погода»
-   - «что умеешь»
-   - «расскажи шутку»
-5. Ассистент распознает фразу и вслух ответит.
-6. Чтобы прервать текущий ответ и начать новый, снова скажите wake word.
+   - `Wake-word active: jarvis` (or your keyword).
+3. Clearly say the wake word (for example **"jarvis"**), wait for `Wake word detected` in logs (and/or a beep).
+4. Immediately after the wake word say your command, e.g.:
+   - “what’s the weather today”
+   - “what can you do”
+   - “tell me a joke”
+5. The assistant will transcribe your utterance and respond with synthesized speech.
+6. To interrupt the current answer and start a new one, say the wake word again.
 
-## Переменные окружения (.env)
+## Environment variables (.env)
 
-Смотри пример в `.env.example`. Кратко:
+See `.env.example` for the full list. Short summary:
 
-| Переменная | Описание |
+| Variable | Description |
 | --- | --- |
-| `OPENAI_API_KEY` | Ключ API OpenAI (обязательно). |
-| `PORCUPINE_ACCESS_KEY` | AccessKey Picovoice (обязательно для wake word). |
-| `PORCUPINE_BUILTIN_KEYWORD` | Встроенное wake word (по умолчанию `jarvis`). Если не поддерживается на вашей платформе, код сам подберёт другое из списка. |
-| `PORCUPINE_KEYWORD_PATH` | Путь к кастомному `.ppn` (имеет приоритет над builtin). |
-| `WAKE_WINDOW_MS` | Сколько миллисекунд после wake word стримить речь в Realtime API (по умолчанию 8000). |
-| `GATE_SILENCE_MS` | Закрыть окно, если столько миллисекунд нет речи (по умолчанию 1200). |
-| `MIN_RMS` | Порог RMS для локального VAD (по умолчанию 200). Меньше — чувствительнее к тихой речи. |
-| `WAKE_DEBOUNCE_MS` | Антидребезг для wake word (по умолчанию 1500 мс). |
-| `AUDIO_DEVICE` | Устройство записи (микрофон): Linux — `arecord -D`, macOS — через `AUDIODEV`. |
-| `AUDIO_OUTPUT_DEVICE` | Устройство воспроизведения (колонки). **Linux**: target для `pw-play` (имя или id узла). Список: `wpctl status` или `pw-cli list-objects Node` — в разделе Sinks взять id или имя нужного вывода. По умолчанию — системное (часто Bluetooth). macOS: не задавать. |
+| `OPENAI_API_KEY` | OpenAI API key (required). |
+| `PORCUPINE_ACCESS_KEY` | Picovoice AccessKey (required for wake word). |
+| `PORCUPINE_BUILTIN_KEYWORD` | Built‑in wake word (default `jarvis`). If not supported on your platform, the code will pick another supported keyword. |
+| `PORCUPINE_KEYWORD_PATH` | Path to a custom `.ppn` file (takes priority over builtin). |
+| `WAKE_WINDOW_MS` | How many ms after wake word to stream mic audio into Realtime API (default 8000). |
+| `GATE_SILENCE_MS` | Close the window if there is no speech for this many ms (default 1200). |
+| `MIN_RMS` | RMS threshold for local VAD (default 200). Lower = more sensitive to quiet speech. |
+| `WAKE_DEBOUNCE_MS` | Debounce interval for wake word (default 1500 ms). |
+| `AUDIO_DEVICE` | Input device (mic). Linux: ALSA device for `arecord -D`. macOS: device via `AUDIODEV`. |
+| `AUDIO_OUTPUT_DEVICE` | Output device (speakers). **Linux**: `pw-play` target (node id or name). Get it via `wpctl status` or `pw-cli list-objects Node` (see Sinks). Default is system output (often Bluetooth). On macOS leave unset. |
 
-## Типичные проблемы и подсказки
+## Troubleshooting
 
-- **Wake word срабатывает не всегда**:
-  - немного понизьте `MIN_RMS` (например, до `150`);
-  - говорите wake word чуть громче и ближе к микрофону;
-  - при необходимости сократите `WAKE_DEBOUNCE_MS`, если часто триггерите подряд осознанно.
+- **Wake word is not always detected**:
+  - slightly decrease `MIN_RMS` (e.g. to `150`);
+  - speak the wake word a bit louder and closer to the mic;
+  - optionally reduce `WAKE_DEBOUNCE_MS` if you intentionally trigger wake word frequently.
 
-- **Ответы иногда не приходят**:
-  - убедитесь, что после `Wake word detected` вы действительно говорите в течение окна (`WAKE_WINDOW_MS`);
-  - проверьте, что ключ `OPENAI_API_KEY` активен и имеет доступ к `gpt-realtime`.
+- **Sometimes there is no answer**:
+  - make sure that after `Wake word detected` you actually speak within the window (`WAKE_WINDOW_MS`);
+  - verify that `OPENAI_API_KEY` is valid and has access to `gpt-realtime`.
 
-- **Нет звука / ошибка при воспроизведении**:
-  - Linux: убедитесь, что установлен PipeWire и в PATH есть `pw-play`.
-  - macOS: установите SoX — `brew install sox` (нужна команда `play`).
+- **No sound / playback errors**:
+  - Linux: ensure PipeWire is installed and `pw-play` is in `PATH`;
+  - macOS: install SoX — `brew install sox` (needs the `play` command).
 
-- **На Linux звук идёт в Bluetooth-колонку, а нужны проводные (например Edifier по USB)**:
-  - Список устройств вывода: выполните **`wpctl status`** (или `pw-cli list-objects Node`). В разделе **Audio → Sinks** найдите свой USB-выход (Edifier / USB Audio) и запомните **id** (число) или **имя** узла.
-  - В `.env` задайте `AUDIO_OUTPUT_DEVICE` — этот id или имя, например: `AUDIO_OUTPUT_DEVICE=42` или `AUDIO_OUTPUT_DEVICE=alsa_output.usb-0bda_4014-00.analog-stereo`.
-  - Перезапустите ассистента — воспроизведение пойдёт в выбранное устройство.
+- **On Linux sound goes to a Bluetooth speaker but you want wired USB speakers (e.g. Edifier)**:
+  - List output devices: run **`wpctl status`** (or `pw-cli list-objects Node`). In **Audio → Sinks** find your USB output (Edifier / USB Audio) and note its **id** (number) or **node name**.
+  - In `.env` set `AUDIO_OUTPUT_DEVICE` to that id or name, e.g. `AUDIO_OUTPUT_DEVICE=42` or `AUDIO_OUTPUT_DEVICE=alsa_output.usb-0bda_4014-00.analog-stereo`.
+  - Restart the assistant — audio will go to the selected sink.
 
-## Структура проекта
+## Project structure
 
-- `src/index.ts` — основной ассистент: Porcupine, wake word, gate‑окно, локальный VAD, RealtimeSession, вывод звука.
-- `src/audio-test.ts` — минимальный тест Porcupine/wake word без подключения к OpenAI.
-- `src/types/external-modules.d.ts` — декларации для внешних модулей без типов (`node-record-lpcm16`, `@picovoice/porcupine-node`).
+- `src/index.ts` — main assistant: Porcupine, wake word, gate window, local VAD, `RealtimeSession`, audio output.
+- `src/audio-test.ts` — minimal Porcupine/wake‑word test without OpenAI.
+- `src/types/external-modules.d.ts` — type declarations for modules without types (`node-record-lpcm16`, `@picovoice/porcupine-node`).
 
-## Лицензия
+## License
 
 MIT

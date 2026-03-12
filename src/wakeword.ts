@@ -17,7 +17,7 @@ function wrapPorcupine(porcupine: InstanceType<typeof Porcupine>): WakeWordEngin
 }
 
 /**
- * Инициализирует Porcupine: либо по пути к .ppn, либо встроенное слово (jarvis и т.д.).
+ * Initializes Porcupine: either with a custom .ppn path or a builtin keyword (jarvis, etc.).
  */
 export function initWakeWord(
   accessKey: string,
